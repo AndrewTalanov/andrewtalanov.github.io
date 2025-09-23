@@ -1,0 +1,496 @@
+<!doctype html>
+<html lang="ru">
+
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+  <title>Whale Run — Phaser 3</title>
+  <link rel="manifest" href="./manifest.json">
+  <meta name="theme-color" content="#79cff5">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <link rel="apple-touch-icon" href="./icons/icon.png">
+  <style>
+    html,
+    body {
+      height: 100%;
+      margin: 0;
+      background: #79cff5
+    }
+
+    #game {
+      width: 100%;
+      height: 100%
+    }
+
+    .hint {
+      position: fixed;
+      left: 50%;
+      transform: translateX(-50%);
+      bottom: 10px;
+      font: 14px/1.2 system-ui, Segoe UI, Roboto, Arial;
+      color: #00324a;
+      opacity: .6
+    }
+  </style>
+</head>
+
+<body>
+  <div id="game"></div>
+  <!-- <div class="hint">тап/клик — сменить направление • Space — смена • R — рестарт</div> -->
+  <script src="./phaser.min.js"></script>
+  <script>
+    (() => {
+      const GAME_W = 480, GAME_H = 800;
+
+      // === КИТ ===
+      const WHALE_TILT_DEG = 14;
+      const WHALE_BASE_SCALE = 110;
+      const WHALE_FACES_LEFT = true;
+
+      // БАЗОВЫЕ СКОРОСТИ
+      const BASE_SCROLL = 160;
+      const BASE_TURN = 220;
+
+      // UI/адаптив
+      const SAFE_PAD = 20; // отступы баннера от краёв
+
+      // === ВНЕШНИЕ СПРАЙТЫ ПРЕГРАД ===
+      const OBSTACLE_SPRITES = [
+        { key: 'o_island', url: './ostrov.png', frameWidth: 256, frameHeight: 256, size: 150, animate: true, enabled: true },
+        { key: 'o_buoy', url: './poplavok.png', frameWidth: 256, frameHeight: 256, size: 70, animate: true, enabled: true },
+        { key: 'o_wave', url: './volna.png', frameWidth: 256, frameHeight: 256, size: 90, animate: true, enabled: true },
+      ];
+      const USE_BUILTINS = true;
+
+      // === БОНУСЫ ===
+      // type: 'invuln' | 'halve_speed' | 'clear_path'
+      const BONUS_SPRITES = [
+        { key: 'b_invuln', url: './rud.png', frameWidth: 256, frameHeight: 256, size: 90, animate: true, enabled: true, type: 'invuln', weight: 3, label: 'Неуязвимость!!!' },
+        { key: 'b_halve', url: './nad.png', frameWidth: 256, frameHeight: 256, size: 90, animate: true, enabled: true, type: 'halve_speed', weight: 3, label: '+5 задач, плыть стало тяжелее' },
+        { key: 'b_clear', url: './rev.png', frameWidth: 256, frameHeight: 256, size: 80, animate: true, enabled: true, type: 'clear_path', weight: 1, label: 'Никаких преград!' },
+      ];
+
+      const config = {
+        type: Phaser.AUTO,
+        parent: 'game',
+        width: GAME_W,
+        height: GAME_H,
+        backgroundColor: '#79cff5',
+        physics: { default: 'arcade', arcade: { debug: false } },
+        scale: { mode: Phaser.Scale.FIT, autoCenter: Phaser.Scale.CENTER_BOTH },
+        scene: { preload, create, update }
+      };
+      const game = new Phaser.Game(config);
+
+      // --- globals ---
+      let playerBody, whaleSprite = null, whaleTiltTween = null;
+      let dir = 1, turnSpeed = BASE_TURN, scrollSpeed = BASE_SCROLL, speedIncrease = 0.02;
+      let obstacles, bonuses, lastSpawn = 0, spawnEvery = 450;
+      let score = 0, scoreText, gameOver = false, restartBtn;
+
+      const OBSTACLE_POOL = [];
+      const BONUS_POOL = [];
+
+      // активные эффекты
+      let invulnUntil = 0;
+      let clearPathUntil = 0;
+      let bonusLabel, activeBonusName = '', activeBonusUntil = 0;
+
+      function preload() {
+        // кит
+        if (location.protocol === 'http:' || location.protocol === 'https:') {
+          this.load.spritesheet('whale', 'kit.png', { frameWidth: 256, frameHeight: 256 });
+        }
+        // преграды
+        OBSTACLE_SPRITES.filter(o => o.enabled).forEach(o => {
+          this.load.spritesheet(o.key, o.url, { frameWidth: o.frameWidth, frameHeight: o.frameHeight });
+        });
+        // бонусы
+        BONUS_SPRITES.filter(b => b.enabled).forEach(b => {
+          this.load.spritesheet(b.key, b.url, { frameWidth: b.frameWidth, frameHeight: b.frameHeight });
+        });
+      }
+
+      function create() {
+        // базовые текстуры
+        if (USE_BUILTINS) makeBuiltinTextures(this);
+
+        registerObstacleSprites(this);
+        registerBonusSprites(this);
+
+        // физтело игрока
+        playerBody = this.physics.add.sprite(GAME_W / 2, GAME_H * 0.15, USE_BUILTINS ? 'placeholder' : (this.textures.exists('whale') ? 'whale' : null));
+        playerBody.setVisible(false).setSize(24, 24).setOffset(12, 16).setCollideWorldBounds(true);
+
+        // кит
+        if (this.textures.exists('whale')) {
+          if (!this.anims.exists('swim')) {
+            this.anims.create({ key: 'swim', frames: this.anims.generateFrameNumbers('whale', { start: 0, end: 3 }), frameRate: 10, repeat: -1 });
+          }
+          whaleSprite = this.add.sprite(playerBody.x, playerBody.y, 'whale', 0);
+          whaleSprite.play('swim');
+          whaleSprite.setDisplaySize(WHALE_BASE_SCALE, WHALE_BASE_SCALE).setDepth(5);
+        }
+
+        // группы
+        obstacles = this.physics.add.group({ allowGravity: false, immovable: true });
+        bonuses = this.physics.add.group({ allowGravity: false, immovable: true });
+
+        // столкновения
+        this.physics.add.overlap(playerBody, obstacles, onHit, null, this);
+        this.physics.add.overlap(playerBody, bonuses, onBonusPickup, null, this);
+
+        // управление
+        this.input.on('pointerdown', toggleDirection);
+        this.input.keyboard.on('keydown-SPACE', toggleDirection);
+        this.input.keyboard.on('keydown-R', () => { if (gameOver) this.scene.restart(); });
+
+        // HUD
+        score = 0;
+        scoreText = this.add.text(GAME_W / 2, 20, '0', {
+          fontFamily: 'system-ui,Segoe UI,Roboto,Arial', fontSize: '28px', color: '#00324a'
+        }).setOrigin(0.5, 0);
+
+        restartBtn = this.add.text(GAME_W / 2, GAME_H / 2 + 80, 'Играть снова?', {
+          fontFamily: 'system-ui,Segoe UI,Roboto,Arial', fontSize: '22px', color: '#00324a',
+          backgroundColor: '#ffffffcc', padding: { x: 14, y: 8 }
+        }).setOrigin(0.5).setAlpha(0).setInteractive().on('pointerdown', () => this.scene.restart());
+
+        bonusLabel = this.add.text(GAME_W / 2, GAME_H - 60, '', {
+          fontFamily: 'system-ui,Segoe UI,Roboto,Arial',
+          fontSize: '22px',
+          color: '#00324a',
+          backgroundColor: '#ffffffcc',
+          padding: { x: 20, y: 10 },
+          align: 'center',
+          fixedWidth: GAME_W - SAFE_PAD * 2
+        }).setOrigin(0.5, 0).setDepth(10).setScrollFactor(0);
+
+        resetStateAndOrient(this);
+
+        this.time.addEvent({ delay: 20000, loop: true, callback: () => spawnBonus(this) });
+
+        this.scale.on('resize', (sz) => layoutUI(this), this);
+        layoutUI(this);
+
+        this.events.on('shutdown', () => {
+          if (whaleTiltTween) { whaleTiltTween.stop(); whaleTiltTween = null; }
+        });
+        this.events.on('destroy', () => {
+          if (whaleTiltTween) { whaleTiltTween.stop(); whaleTiltTween = null; }
+        });
+      }
+
+      function update(time, delta) {
+        if (gameOver) return;
+        const dt = delta / 1000;
+
+        playerBody.setVelocityX(dir * turnSpeed);
+        if (playerBody.body.blocked.left || playerBody.body.blocked.right) { onHit(); return; }
+
+        if (whaleSprite) { whaleSprite.x = playerBody.x; whaleSprite.y = playerBody.y; }
+
+        if (time - lastSpawn > spawnEvery) {
+          lastSpawn = time;
+          if (!isClearPathActive()) spawnObstacle(this);
+        }
+
+        // движение объектов вверх
+        obstacles.getChildren().forEach(o => { o.y -= scrollSpeed * dt; if (o.y < -100) o.destroy(); });
+        bonuses.getChildren().forEach(b => { b.y -= scrollSpeed * dt * 0.9; if (b.y < -100) b.destroy(); });
+
+        // чистый путь
+        if (isClearPathActive()) { obstacles.getChildren().forEach(o => o.destroy()); }
+
+        // счёт и сложность
+        score += scrollSpeed * dt * 0.05;
+        scoreText.setText(Math.floor(score).toString());
+        scrollSpeed += speedIncrease;
+        if (turnSpeed < 320) turnSpeed += speedIncrease * 0.5;
+
+        // HUD бонуса
+        updateBonusHUD();
+      }
+
+      // ===== helpers =====
+      function resetStateAndOrient(scene) {
+        // базовые параметры
+        dir = Math.random() < 0.5 ? -1 : 1;
+        gameOver = false;
+        scrollSpeed = BASE_SCROLL;
+        turnSpeed = BASE_TURN;
+        invulnUntil = 0;
+        clearPathUntil = 0;
+        activeBonusName = '';
+        activeBonusUntil = 0;
+
+        // визуал кита: сброс угла/твинов, установка флипа под dir, лёгкий «кивок»
+        if (whaleTiltTween) { whaleTiltTween.stop(); whaleTiltTween = null; }
+        if (whaleSprite) {
+          whaleSprite.setAngle(0);
+          const goingRight = dir > 0;
+          if (WHALE_FACES_LEFT) whaleSprite.setFlipX(goingRight); else whaleSprite.setFlipX(!goingRight);
+          // короткий наклон и возврат к 0
+          whaleSprite.setAngle(goingRight ? WHALE_TILT_DEG : -WHALE_TILT_DEG);
+          whaleTiltTween = scene.tweens.add({
+            targets: whaleSprite, angle: 0, duration: 120, ease: 'Sine.out'
+          });
+        }
+      }
+
+      function layoutUI(scene) {
+        const cam = scene.cameras.main;
+        const cx = cam.worldView.centerX;
+        const topY = cam.worldView.top + 20;
+        const bottomY = cam.worldView.bottom - 60;
+
+        scoreText.setPosition(cx, topY);
+        restartBtn.setPosition(cx, cam.worldView.centerY + 80);
+
+        bonusLabel.setPosition(cx, bottomY);
+        bonusLabel.setFixedSize(cam.width - SAFE_PAD * 2, bonusLabel.height); // обновить fixedWidth под текущую ширину
+      }
+
+      function toggleDirection() {
+        if (gameOver) return;
+        dir *= -1;
+        // безопасный «кивок» через твин
+        if (!whaleSprite) return;
+        if (whaleTiltTween) { whaleTiltTween.stop(); whaleTiltTween = null; }
+        const goingRight = dir > 0;
+        if (WHALE_FACES_LEFT) whaleSprite.setFlipX(goingRight); else whaleSprite.setFlipX(!goingRight);
+        whaleSprite.setAngle(goingRight ? WHALE_TILT_DEG : -WHALE_TILT_DEG);
+        whaleTiltTween = game.scene.scenes[0].tweens.add({
+          targets: whaleSprite, angle: 0, duration: 120, ease: 'Sine.out'
+        });
+      }
+
+      function onHit(player, obstacle) {
+        if (gameOver) return;
+        if (isInvulnActive()) {
+          const cam = game.scene.scenes[0].cameras.main;
+          cam.flash(120, 180, 255, 180);
+          return;
+        }
+        gameOver = true;
+        const cam = game.scene.scenes[0].cameras.main;
+        cam.flash(180, 255, 80, 80);
+        playerBody.setVelocity(0, 0);
+        const s = Math.floor(score);
+        const best = Math.max(s, parseInt(localStorage.getItem('bestWhaleScore') || '0', 10));
+        localStorage.setItem('bestWhaleScore', best.toString());
+        game.scene.scenes[0].add.text(cam.worldView.centerX, cam.worldView.centerY - 20,
+          `Game Over\nСчёт: ${s}\nРекорд: ${best}`, {
+          fontFamily: 'system-ui,Segoe UI,Roboto,Arial', fontSize: '28px', color: '#001b28',
+          align: 'center', backgroundColor: '#ffffffdd', padding: { x: 16, y: 12 }
+        }).setOrigin(0.5).setDepth(10);
+        game.scene.scenes[0].tweens.add({ targets: restartBtn, alpha: 1, duration: 250, delay: 120 });
+      }
+
+      // === BUILTIN-ТЕКСТУРЫ ===
+      function makeBuiltinTextures(scene) {
+        const g = scene.add.graphics();
+        g.fillStyle(0x114477, 1); g.fillCircle(16, 16, 12);
+        g.fillStyle(0xdd3344, 1); g.fillRect(10, 28, 12, 14);
+        g.fillStyle(0x333333, 1); g.fillRect(4, 42, 28, 3);
+        g.generateTexture('placeholder', 36, 50); g.destroy();
+
+        const r = scene.add.graphics();
+        r.fillStyle(0x6f7a87, 1); r.fillCircle(18, 18, 18);
+        r.generateTexture('rock', 36, 36); r.destroy();
+
+        const b = scene.add.graphics();
+        b.fillStyle(0xffffff, 1); b.fillCircle(16, 16, 14);
+        b.lineStyle(3, 0xcc3b3b, 1); b.strokeCircle(16, 16, 12);
+        b.fillStyle(0xcc3b3b, 1); b.fillRect(14, 0, 4, 10);
+        b.generateTexture('buoy', 32, 32); b.destroy();
+
+        const isl = scene.add.graphics();
+        isl.fillStyle(0xe9d9a6, 1); isl.fillEllipse(34, 24, 64, 36);
+        isl.fillStyle(0x2d7d2f, 1); isl.fillTriangle(34, 0, 12, 28, 56, 28);
+        isl.generateTexture('island', 68, 48); isl.destroy();
+
+        if (USE_BUILTINS) {
+          OBSTACLE_POOL.push(
+            //   { type:'builtin', key:'rock',   animate:false, size:{w:36,h:36} },
+            //   { type:'builtin', key:'buoy',   animate:false, size:{w:32,h:32} },
+            //   { type:'builtin', key:'island', animate:false, size:{w:68,h:48} },
+          );
+        }
+      }
+
+      // === РЕГИСТРАЦИЯ ПРЕГРАД ===
+      function registerObstacleSprites(scene) {
+        OBSTACLE_SPRITES.filter(o => o.enabled).forEach(o => {
+          if (!scene.textures.exists(o.key)) return;
+          if (o.animate && !scene.anims.exists(o.key + '_anim')) {
+            scene.anims.create({
+              key: o.key + '_anim',
+              frames: scene.anims.generateFrameNumbers(o.key, { start: 0, end: 3 }),
+              frameRate: 8, repeat: -1
+            });
+          }
+          const size = (typeof o.size === 'number')
+            ? { w: o.size, h: o.size }
+            : { w: o.size?.w || o.frameWidth, h: o.size?.h || o.frameHeight };
+          OBSTACLE_POOL.push({ type: 'sprite', key: o.key, animate: !!o.animate, size });
+        });
+      }
+
+      // === РЕГИСТРАЦИЯ БОНУСОВ (устойчива к 1 кадру) ===
+      function registerBonusSprites(scene) {
+        BONUS_SPRITES.filter(b => b.enabled).forEach(b => {
+          if (!scene.textures.exists(b.key)) return;
+          const frameTotal = scene.textures.get(b.key)?.frameTotal ?? 1;
+          const endFrame = Math.min(3, frameTotal - 1);
+          const willAnimate = b.animate && endFrame >= 1;
+
+          if (willAnimate && !scene.anims.exists(b.key + '_anim')) {
+            scene.anims.create({
+              key: b.key + '_anim',
+              frames: scene.anims.generateFrameNumbers(b.key, { start: 0, end: endFrame }),
+              frameRate: 8, repeat: -1
+            });
+          }
+          const size = (typeof b.size === 'number')
+            ? { w: b.size, h: b.size }
+            : { w: b.size?.w || b.frameWidth, h: b.size?.h || b.frameHeight };
+
+          BONUS_POOL.push({ key: b.key, animate: willAnimate, size, type: b.type, weight: b.weight || 1, label: b.label || '' });
+        });
+      }
+
+      // === СПАВН ПРЕГРАДЫ ===
+      function spawnObstacle(scene) {
+        if (OBSTACLE_POOL.length === 0) return;
+        const t = Phaser.Utils.Array.GetRandom(OBSTACLE_POOL);
+        const margin = 50;
+        const x = Phaser.Math.Between(margin, GAME_W - margin);
+        const y = GAME_H + 60;
+
+        let o;
+        if (t.type === 'builtin') {
+          o = obstacles.create(x, y, t.key);
+          o.setDisplaySize(t.size.w, t.size.h);
+        } else {
+          o = scene.add.sprite(x, y, t.key, 0);
+          o.setOrigin(0.5).setDisplaySize(t.size.w, t.size.h);
+          scene.physics.world.enable(o); obstacles.add(o);
+          o.body.setImmovable(true).allowGravity = false;
+          if (t.animate) o.play(t.key + '_anim'); else o.setFrame(0);
+        }
+        o.body && o.body.setSize(o.displayWidth * 0.8, o.displayHeight * 0.8);
+        o.setDepth(1);
+        scene.tweens.add({
+          targets: o, x: o.x + Phaser.Math.FloatBetween(-18, 18),
+          duration: Phaser.Math.Between(900, 1400),
+          ease: 'Sine.inOut', yoyo: true
+        });
+      }
+
+      // === СПАВН БОНУСА ===
+      function spawnBonus(scene) {
+        if (BONUS_POOL.length === 0) return;
+
+        // весовой выбор
+        const totalW = BONUS_POOL.reduce((s, b) => s + b.weight, 0);
+        let r = Math.random() * totalW, picked = BONUS_POOL[0];
+        for (const b of BONUS_POOL) { r -= b.weight; if (r <= 0) { picked = b; break; } }
+
+        const margin = 50;
+        const x = Phaser.Math.Between(margin, GAME_W - margin);
+        const y = GAME_H + 60;
+
+        const s = scene.add.sprite(x, y, picked.key, 0);
+        s.setOrigin(0.5).setDisplaySize(picked.size.w, picked.size.h);
+        scene.physics.world.enable(s); bonuses.add(s);
+        s.body.setImmovable(true).allowGravity = false;
+        s.body.setSize(s.displayWidth * 0.8, s.displayHeight * 0.8);
+
+        if (picked.animate) s.play(picked.key + '_anim'); else s.setFrame(0);
+        s.type = picked.type;
+        s.label = picked.label;
+        s.setDepth(2);
+
+        scene.tweens.add({
+          targets: s,
+          x: s.x + Phaser.Math.FloatBetween(-12, 12),
+          duration: Phaser.Math.Between(900, 1400),
+          ease: 'Sine.inOut', yoyo: true
+        });
+      }
+
+      // === ПОДБОР БОНУСА ===
+      function onBonusPickup(player, b) {
+        if (!b || !b.type) return;
+        const now = performance.now();
+
+        if (b.type === 'invuln') {
+          invulnUntil = now + 10000;
+          setActiveBonusHUD(b.label || 'Неуязвимость', invulnUntil);
+        }
+        else if (b.type === 'halve_speed') {
+          halveAccumulatedSpeed();
+          activeBonusUntil = now + 10000;
+          activeBonusName = b.label || 'Полусброс скорости';
+        }
+        else if (b.type === 'clear_path') {
+          clearPathUntil = now + 10000;
+          obstacles.getChildren().forEach(o => o.destroy());
+          setActiveBonusHUD(b.label || 'Чистый путь', clearPathUntil);
+        }
+
+        b.destroy();
+      }
+
+      function isInvulnActive() { return performance.now() < invulnUntil; }
+      function isClearPathActive() { return performance.now() < clearPathUntil; }
+
+      function halveAccumulatedSpeed() {
+        const dScroll = scrollSpeed - BASE_SCROLL;
+        const dTurn = turnSpeed - BASE_TURN;
+        scrollSpeed = BASE_SCROLL + dScroll * 0.5;
+        turnSpeed = BASE_TURN + dTurn * 0.5;
+      }
+
+      // === HUD бонусов ===
+      function setActiveBonusHUD(name, untilTs) {
+        activeBonusName = name;
+        activeBonusUntil = untilTs;
+        updateBonusHUD();
+      }
+      function updateBonusHUD() {
+        const now = performance.now();
+        if (now < activeBonusUntil) {
+          const secLeft = Math.max(0, Math.ceil((activeBonusUntil - now) / 1000));
+          bonusLabel.setText(`${activeBonusName}: ${secLeft} c`);
+          bonusLabel.setAlpha(1);
+        } else {
+          bonusLabel.setAlpha(0);
+        }
+      }
+
+    })();
+  </script>
+
+  <script>
+    // регистрация SW (работает на https и localhost)
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('./service-worker.js').catch(console.error);
+      });
+    }
+
+    // Android: кастомная кнопка «Установить» (опционально)
+    // let deferredPrompt;
+    // window.addEventListener('beforeinstallprompt', (e) => {
+    //   e.preventDefault();
+    //   deferredPrompt = e;
+    //   // покажи свою кнопку "Установить"
+    //   // onClick: deferredPrompt.prompt();
+    // });
+  </script>
+</body>
+
+</html>
