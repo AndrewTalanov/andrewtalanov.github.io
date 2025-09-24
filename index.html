@@ -9,7 +9,7 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="default">
   <title>Whale Run — Phaser 3</title>
   <link rel="manifest" href="./manifest.json">
-  <meta name="theme-color" content="#79cff5">
+  <meta name="theme-color" content="#000000">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="default">
   <link rel="apple-touch-icon" href="./icons/icon.png">
@@ -18,8 +18,20 @@
     body {
       height: 100%;
       margin: 0;
-      background: #79cff5;
+      /* background: #79cff5; */
+      /* чёрный фон для классической "матрицы" */
       overscroll-behavior: none;
+    }
+
+    #matrix {
+      position: fixed;
+      inset: 0;
+      z-index: 0;
+      /* ниже игры */
+      display: block;
+      pointer-events: none;
+      /* не мешает тапам/кликам по игре */
+      background: transparent;
     }
 
     #game {
@@ -28,6 +40,8 @@
       width: 100vw;
       height: 100svh;
       touch-action: none;
+      z-index: 1;
+      /* игра поверх */
     }
 
     .hint {
@@ -36,17 +50,86 @@
       transform: translateX(-50%);
       bottom: 10px;
       font: 14px/1.2 system-ui, Segoe UI, Roboto, Arial;
-      color: #00324a;
+      color: #e0e0e0;
       opacity: .6
     }
   </style>
 </head>
 
 <body>
+  <!-- Фон-матрица -->
+  <canvas id="matrix"></canvas>
+
+  <!-- Игра -->
   <div id="game"></div>
   <!-- <div class="hint">тап/клик — сменить направление • Space — смена • R — рестарт</div> -->
+
   <script src="./phaser.min.js"></script>
+
   <script>
+    // ===== DIGITAL RAIN ("Матрица") на всём экране =====
+    (function initMatrix() {
+      const canvas = document.getElementById('matrix');
+      const ctx = canvas.getContext('2d');
+
+      let letters = 'ABCDEFGHIJKLMNOPQRSTUVXYZ';
+      letters = (letters + letters + letters + letters + letters + letters).split('');
+
+      let fontSize = 14;     // размер символа
+      let columns = 0;       // количество колонок
+      let drops = [];        // "капли" на колонку
+      let raf = 0;
+
+      function resize() {
+        const dpr = Math.max(1, Math.min(2, window.devicePixelRatio || 1));
+        const w = window.innerWidth;
+        const h = window.innerHeight;
+
+        canvas.width = Math.floor(w * dpr);
+        canvas.height = Math.floor(h * dpr);
+        canvas.style.width = w + 'px';
+        canvas.style.height = h + 'px';
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+        columns = Math.ceil(w / fontSize);
+        drops = new Array(columns).fill(1);
+        ctx.font = `${fontSize}px monospace`;
+      }
+
+      function draw() {
+        // "шлейф"
+        ctx.fillStyle = 'rgba(121, 207, 245, 0.1)';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+        for (let i = 0; i < drops.length; i++) {
+          const text = letters[Math.floor(Math.random() * letters.length)];
+          ctx.fillStyle = 'rgba(0, 120, 200, 0.25)';
+          ctx.fillText(text, i * fontSize, drops[i] * fontSize);
+
+          // drops[i]++;
+          drops[i] += 0.5;
+          if (drops[i] * fontSize > window.innerHeight && Math.random() > 0.95) {
+            drops[i] = 0;
+          }
+        }
+        raf = requestAnimationFrame(draw);
+      }
+
+      // Старт/стоп при сворачивании
+      document.addEventListener('visibilitychange', () => {
+        if (document.hidden) cancelAnimationFrame(raf);
+        else raf = requestAnimationFrame(draw);
+      });
+
+      window.addEventListener('resize', resize, { passive: true });
+
+      resize();
+      raf = requestAnimationFrame(draw);
+    })();
+  </script>
+
+  <script>
+    // ===== ИГРА (Phaser) =====
     (() => {
       const GAME_W = 480, GAME_H = 800;
 
@@ -59,14 +142,17 @@
       const BASE_SCROLL = 160;
       const BASE_TURN = 220;
 
+      let coffeeMagnetUntil = 0;
+      let optimizeUntil = 0;
+
       // UI/адаптив
       const SAFE_PAD = 20; // отступы баннера от краёв
 
       // === ВНЕШНИЕ СПРАЙТЫ ПРЕГРАД ===
       const OBSTACLE_SPRITES = [
-        { key: 'o_island', url: './ostrov.png', frameWidth: 256, frameHeight: 256, size: 150, animate: true, enabled: true },
-        { key: 'o_buoy', url: './poplavok.png', frameWidth: 256, frameHeight: 256, size: 70, animate: true, enabled: true },
-        { key: 'o_wave', url: './volna.png', frameWidth: 256, frameHeight: 256, size: 90, animate: true, enabled: true },
+        { key: 'o_island', url: './bag.png', frameWidth: 256, frameHeight: 256, size: 90, animate: true, enabled: true },
+        { key: 'o_buoy', url: './fire.png', frameWidth: 256, frameHeight: 256, size: 90, animate: true, enabled: true },
+        { key: 'o_wave', url: './iam.png', frameWidth: 256, frameHeight: 256, size: 90, animate: true, enabled: true },
       ];
       const USE_BUILTINS = true;
 
@@ -76,14 +162,22 @@
         { key: 'b_invuln', url: './rud.png', frameWidth: 256, frameHeight: 256, size: 90, animate: true, enabled: true, type: 'invuln', weight: 3, label: 'Неуязвимость!!!' },
         { key: 'b_halve', url: './nad.png', frameWidth: 256, frameHeight: 256, size: 90, animate: true, enabled: true, type: 'halve_speed', weight: 3, label: '+5 задач, плыть стало тяжелее' },
         { key: 'b_clear', url: './rev.png', frameWidth: 256, frameHeight: 256, size: 80, animate: true, enabled: true, type: 'clear_path', weight: 1, label: 'Никаких преград!' },
+        { key: 'b_coffeeMagnet', url: './ylia.png', frameWidth: 256, frameHeight: 256, size: 80, animate: true, enabled: true, type: 'coffee_magnet', weight: 2, label: 'Кофейный магнит' },
+        
+        // { key: 'b_optimize', url: './rev.png', frameWidth: 256, frameHeight: 256, size: 80, animate: true, enabled: true, type: 'optimize_code', weight: 2, label: 'Оптимизация кода' },
+        // { key: 'b_scrum', url: './rev.png', frameWidth: 256, frameHeight: 256, size: 80, animate: true, enabled: true, type: 'scrum_boost', weight: 1, label: 'Scrum-ускорение' },
       ];
+
+      // === КОФЕ (монетки) ===
+      const COFFEE_SPRITE = { key: 'c_coffee', url: './coffee.png', frameWidth: 256, frameHeight: 256, size: 85, animate: true, enabled: true };
+      const COFFEE_SPAWN_MS = 3500; // период появления кофе
 
       const config = {
         type: Phaser.AUTO,
         parent: 'game',
         width: GAME_W,
         height: GAME_H,
-        backgroundColor: '#79cff5',
+        transparent: true, // фон игры прозрачный — видно "матрицу"
         physics: { default: 'arcade', arcade: { debug: false } },
         scale: { mode: Phaser.Scale.FIT, autoCenter: Phaser.Scale.CENTER_BOTH },
         scene: { preload, create, update }
@@ -92,9 +186,9 @@
 
       // --- globals ---
       let playerBody, whaleSprite = null, whaleTiltTween = null;
-      let dir = 1, turnSpeed = BASE_TURN, scrollSpeed = BASE_SCROLL, speedIncrease = 0.2;
-      let obstacles, bonuses, lastSpawn = 0, spawnEvery = 450;
-      let score = 0, scoreText, gameOver = false, restartBtn;
+      let dir = 1, turnSpeed = BASE_TURN, scrollSpeed = BASE_SCROLL, speedIncrease = 0.14;
+      let obstacles, bonuses, coffees, lastSpawn = 0, spawnEvery = 450;
+      let score = 0, scoreText, coffeeText, coffeeIcon, gameOver = false, restartBtn;
 
       const OBSTACLE_POOL = [];
       const BONUS_POOL = [];
@@ -103,6 +197,13 @@
       let invulnUntil = 0;
       let clearPathUntil = 0;
       let bonusLabel, activeBonusName = '', activeBonusUntil = 0;
+
+      // кофе
+      let coffeeCount = 0;
+      let coffeeTimerEvent = null;
+
+      // >>> цель для «магнита»: координаты HUD-уголка, куда летит кофе
+      let coffeeTarget = { x: 0, y: 0 };
 
       function preload() {
         // кит
@@ -117,6 +218,11 @@
         BONUS_SPRITES.filter(b => b.enabled).forEach(b => {
           this.load.spritesheet(b.key, b.url, { frameWidth: b.frameWidth, frameHeight: b.frameHeight });
         });
+        // кофе
+        if (COFFEE_SPRITE.enabled) {
+          this.load.spritesheet(COFFEE_SPRITE.key, COFFEE_SPRITE.url, { frameWidth: COFFEE_SPRITE.frameWidth, frameHeight: COFFEE_SPRITE.frameHeight });
+        }
+        // НИКАКОГО back.png — убрано
       }
 
       function create() {
@@ -125,6 +231,7 @@
 
         registerObstacleSprites(this);
         registerBonusSprites(this);
+        registerCoffeeSprite(this);
 
         // физтело игрока
         playerBody = this.physics.add.sprite(GAME_W / 2, GAME_H * 0.15, USE_BUILTINS ? 'placeholder' : (this.textures.exists('whale') ? 'whale' : null));
@@ -143,10 +250,12 @@
         // группы
         obstacles = this.physics.add.group({ allowGravity: false, immovable: true });
         bonuses = this.physics.add.group({ allowGravity: false, immovable: true });
+        coffees = this.physics.add.group({ allowGravity: false, immovable: true });
 
         // столкновения
         this.physics.add.overlap(playerBody, obstacles, onHit, null, this);
         this.physics.add.overlap(playerBody, bonuses, onBonusPickup, null, this);
+        this.physics.add.overlap(playerBody, coffees, onCoffeePickup, null, this);
 
         // управление
         this.input.on('pointerdown', toggleDirection);
@@ -155,15 +264,24 @@
 
         // HUD
         score = 0;
+        coffeeCount = 0;
+
         scoreText = this.add.text(GAME_W / 2, 20, '0', {
-          fontFamily: 'system-ui,Segoe UI,Roboto,Arial', fontSize: '28px', color: '#00324a'
+          fontFamily: 'system-ui,Segoe UI,Roboto,Arial', fontSize: '28px', color: '#e0ffe0'
         }).setOrigin(0.5, 0)
           .setDepth(100)
           .setScrollFactor(0);
 
+        coffeeText = this.add.text(GAME_W - SAFE_PAD, 20, '+0%', {
+          fontFamily: 'system-ui,Segoe UI,Roboto,Arial', fontSize: '22px', color: '#e0ffe0',
+          backgroundColor: '#00000066', padding: { x: 10, y: 3 }
+        }).setOrigin(1, 0)
+          .setDepth(100)
+          .setScrollFactor(0);
+
         restartBtn = this.add.text(GAME_W / 2, GAME_H / 2 + 80, 'Играть снова?', {
-          fontFamily: 'system-ui,Segoe UI,Roboto,Arial', fontSize: '22px', color: '#00324a',
-          backgroundColor: '#ffffffcc', padding: { x: 14, y: 8 }
+          fontFamily: 'system-ui,Segoe UI,Roboto,Arial', fontSize: '22px', color: '#e0ffe0',
+          backgroundColor: '#00000066', padding: { x: 14, y: 8 }
         }).setOrigin(0.5)
           .setAlpha(0)
           .setDepth(100)
@@ -174,8 +292,8 @@
         bonusLabel = this.add.text(GAME_W / 2, GAME_H - 60, '', {
           fontFamily: 'system-ui,Segoe UI,Roboto,Arial',
           fontSize: '22px',
-          color: '#00324a',
-          backgroundColor: '#ffffffcc',
+          color: '#e0ffe0',
+          backgroundColor: '#00000066',
           padding: { x: 20, y: 10 },
           align: 'center',
           fixedWidth: GAME_W - SAFE_PAD * 2
@@ -185,17 +303,14 @@
 
         resetStateAndOrient(this);
 
-        this.time.addEvent({ delay: 20000, loop: true, callback: () => spawnBonus(this) });
+        this.time.addEvent({ delay: 10000, loop: true, callback: () => spawnBonus(this) });
+        coffeeTimerEvent = this.time.addEvent({ delay: COFFEE_SPAWN_MS, loop: true, callback: () => spawnCoffee(this) });
 
-        this.scale.on('resize', (sz) => layoutUI(this), this);
+        this.scale.on('resize', () => layoutUI(this), this);
         layoutUI(this);
 
-        this.events.on('shutdown', () => {
-          if (whaleTiltTween) { whaleTiltTween.stop(); whaleTiltTween = null; }
-        });
-        this.events.on('destroy', () => {
-          if (whaleTiltTween) { whaleTiltTween.stop(); whaleTiltTween = null; }
-        });
+        this.events.on('shutdown', () => { if (whaleTiltTween) { whaleTiltTween.stop(); whaleTiltTween = null; } });
+        this.events.on('destroy', () => { if (whaleTiltTween) { whaleTiltTween.stop(); whaleTiltTween = null; } });
       }
 
       function update(time, delta) {
@@ -216,16 +331,61 @@
         obstacles.getChildren().forEach(o => { o.y -= scrollSpeed * dt; if (o.y < -100) o.destroy(); });
         bonuses.getChildren().forEach(b => { b.y -= scrollSpeed * dt * 0.9; if (b.y < -100) b.destroy(); });
 
-        // чистый путь
-        if (isClearPathActive()) { obstacles.getChildren().forEach(o => o.destroy()); }
+        // кофе: чистим вылетевшие
+        coffees.getChildren().forEach(c => { if (c.y < -120) c.destroy(); });
 
-        // счёт и сложность
-        score += scrollSpeed * dt * 0.05;
+        // === СЧЁТ с МНОЖИТЕЛЕМ от кофе ===
+        const mult = scoreMultiplier();
+        score += scrollSpeed * dt * 0.05 * mult;
         scoreText.setText(Math.floor(score).toString());
         scrollSpeed += speedIncrease;
         if (turnSpeed < 320) turnSpeed += speedIncrease * 0.5;
 
-        // HUD бонуса
+        // === КОФЕ: базовое движение (без магнита) — летит вверх через физику
+        if (!(coffeeMagnetUntil && performance.now() < coffeeMagnetUntil)) {
+          coffees.getChildren().forEach(c => {
+            if (!c.body) return;
+            c.body.setVelocity(0, -scrollSpeed);
+          });
+        }
+
+        // === КОФЕ: магнит — летим в правый верх (к HUD) и автособираемся
+        if (coffeeMagnetUntil && performance.now() < coffeeMagnetUntil) {
+          const speedToHUD = 900;   // скорость полёта к HUD
+          const collectR = 18;      // радиус автосбора у HUD
+
+          coffees.getChildren().forEach(c => {
+            if (!c.body) return;
+
+            // направляем к цели
+            this.physics.moveTo(c, coffeeTarget.x, coffeeTarget.y, speedToHUD);
+
+            // чек на «долёт»
+            const dx = coffeeTarget.x - c.x;
+            const dy = coffeeTarget.y - c.y;
+            if (dx * dx + dy * dy <= collectR * collectR) {
+              coffeeCount += 1;
+              updateCoffeeHUD();
+
+              // мини-эффект HUD
+              this.tweens.add({
+                targets: coffeeText,
+                scaleX: 1.08, scaleY: 1.08,
+                yoyo: true, duration: 120, ease: 'Sine.out'
+              });
+
+              c.destroy();
+            }
+          });
+        }
+
+        // эффект оптимизации кода
+        if (optimizeUntil && performance.now() < optimizeUntil) {
+          obstacles.getChildren().forEach(o => {
+            o.setScale(0.7);
+          });
+        }
+
         updateBonusHUD();
       }
 
@@ -240,6 +400,8 @@
         clearPathUntil = 0;
         activeBonusName = '';
         activeBonusUntil = 0;
+        coffeeCount = 0;
+        updateCoffeeHUD();
 
         // визуал кита: сброс угла/твинов, установка флипа под dir, лёгкий «кивок»
         if (whaleTiltTween) { whaleTiltTween.stop(); whaleTiltTween = null; }
@@ -247,43 +409,46 @@
           whaleSprite.setAngle(0);
           const goingRight = dir > 0;
           if (WHALE_FACES_LEFT) whaleSprite.setFlipX(goingRight); else whaleSprite.setFlipX(!goingRight);
-          // короткий наклон и возврат к 0
           whaleSprite.setAngle(goingRight ? WHALE_TILT_DEG : -WHALE_TILT_DEG);
-          whaleTiltTween = scene.tweens.add({
-            targets: whaleSprite, angle: 0, duration: 120, ease: 'Sine.out'
-          });
+          whaleTiltTween = scene.tweens.add({ targets: whaleSprite, angle: 0, duration: 120, ease: 'Sine.out' });
         }
       }
 
       function layoutUI(scene) {
-        const cam = scene.cameras.main;
-        const cx = cam.worldView.centerX;
-        const topY = cam.worldView.top + 20;
-        const bottomY = cam.worldView.bottom - 60;
-
         scoreText.setPosition(GAME_W / 2, 20);
         restartBtn.setPosition(GAME_W / 2, GAME_H / 2 + 80);
 
-        const SAFE_PAD = 20;
-        bonusLabel.setFixedSize(GAME_W - SAFE_PAD * 2, bonusLabel.height);
-        bonusLabel.setWordWrapWidth(GAME_W - SAFE_PAD * 2, true);
+        if (coffeeIcon && coffeeIcon.active) {
+          const iconX = GAME_W - SAFE_PAD - 80;
+          coffeeIcon.setPosition(iconX, 44).setScrollFactor(0);
+          coffeeText.setPosition(coffeeIcon.x + 6, 20);
+          coffeeText.setOrigin(0, 0);
+        } else {
+          coffeeText.setPosition(GAME_W - SAFE_PAD, 20);
+          coffeeText.setOrigin(1, 0);
+        }
+
+        // >>> обновляем точку-цель для полёта кофе
+        coffeeTarget.x = GAME_W - SAFE_PAD - 8; // чуть левее края
+        coffeeTarget.y = 28;                     // рядом с coffeeText
+
+        const SAFE_PAD_LOCAL = 20;
+        bonusLabel.setFixedSize(GAME_W - SAFE_PAD_LOCAL * 2, bonusLabel.height);
+        bonusLabel.setWordWrapWidth(GAME_W - SAFE_PAD_LOCAL * 2, true);
       }
 
       function toggleDirection() {
         if (gameOver) return;
         dir *= -1;
-        // безопасный «кивок» через твин
         if (!whaleSprite) return;
         if (whaleTiltTween) { whaleTiltTween.stop(); whaleTiltTween = null; }
         const goingRight = dir > 0;
         if (WHALE_FACES_LEFT) whaleSprite.setFlipX(goingRight); else whaleSprite.setFlipX(!goingRight);
         whaleSprite.setAngle(goingRight ? WHALE_TILT_DEG : -WHALE_TILT_DEG);
-        whaleTiltTween = game.scene.scenes[0].tweens.add({
-          targets: whaleSprite, angle: 0, duration: 120, ease: 'Sine.out'
-        });
+        whaleTiltTween = game.scene.scenes[0].tweens.add({ targets: whaleSprite, angle: 0, duration: 120, ease: 'Sine.out' });
       }
 
-      function onHit(player, obstacle) {
+      function onHit() {
         if (gameOver) return;
         if (isInvulnActive()) {
           const cam = game.scene.scenes[0].cameras.main;
@@ -299,8 +464,8 @@
         localStorage.setItem('bestWhaleScore', best.toString());
         game.scene.scenes[0].add.text(cam.worldView.centerX, cam.worldView.centerY - 20,
           `Game Over\nСчёт: ${s}\nРекорд: ${best}`, {
-          fontFamily: 'system-ui,Segoe UI,Roboto,Arial', fontSize: '28px', color: '#001b28',
-          align: 'center', backgroundColor: '#ffffffdd', padding: { x: 16, y: 12 }
+          fontFamily: 'system-ui,Segoe UI,Roboto,Arial', fontSize: '28px', color: '#e0ffe0',
+          align: 'center', backgroundColor: '#000000aa', padding: { x: 16, y: 12 }
         }).setOrigin(0.5).setDepth(10);
         game.scene.scenes[0].tweens.add({ targets: restartBtn, alpha: 1, duration: 250, delay: 120 });
       }
@@ -313,27 +478,8 @@
         g.fillStyle(0x333333, 1); g.fillRect(4, 42, 28, 3);
         g.generateTexture('placeholder', 36, 50); g.destroy();
 
-        const r = scene.add.graphics();
-        r.fillStyle(0x6f7a87, 1); r.fillCircle(18, 18, 18);
-        r.generateTexture('rock', 36, 36); r.destroy();
-
-        const b = scene.add.graphics();
-        b.fillStyle(0xffffff, 1); b.fillCircle(16, 16, 14);
-        b.lineStyle(3, 0xcc3b3b, 1); b.strokeCircle(16, 16, 12);
-        b.fillStyle(0xcc3b3b, 1); b.fillRect(14, 0, 4, 10);
-        b.generateTexture('buoy', 32, 32); b.destroy();
-
-        const isl = scene.add.graphics();
-        isl.fillStyle(0xe9d9a6, 1); isl.fillEllipse(34, 24, 64, 36);
-        isl.fillStyle(0x2d7d2f, 1); isl.fillTriangle(34, 0, 12, 28, 56, 28);
-        isl.generateTexture('island', 68, 48); isl.destroy();
-
         if (USE_BUILTINS) {
-          OBSTACLE_POOL.push(
-            //   { type:'builtin', key:'rock',   animate:false, size:{w:36,h:36} },
-            //   { type:'builtin', key:'buoy',   animate:false, size:{w:32,h:32} },
-            //   { type:'builtin', key:'island', animate:false, size:{w:68,h:48} },
-          );
+          // Можно добавить встроенные препятствия при желании
         }
       }
 
@@ -355,7 +501,7 @@
         });
       }
 
-      // === РЕГИСТРАЦИЯ БОНУСОВ (устойчива к 1 кадру) ===
+      // === РЕГИСТРАЦИЯ БОНУСОВ ===
       function registerBonusSprites(scene) {
         BONUS_SPRITES.filter(b => b.enabled).forEach(b => {
           if (!scene.textures.exists(b.key)) return;
@@ -376,6 +522,24 @@
 
           BONUS_POOL.push({ key: b.key, animate: willAnimate, size, type: b.type, weight: b.weight || 1, label: b.label || '' });
         });
+      }
+
+      // === РЕГИСТРАЦИЯ КОФЕ ===
+      function registerCoffeeSprite(scene) {
+        if (!COFFEE_SPRITE.enabled) return;
+        if (!scene.textures.exists(COFFEE_SPRITE.key)) return;
+
+        const frameTotal = scene.textures.get(COFFEE_SPRITE.key)?.frameTotal ?? 1;
+        const endFrame = Math.min(3, frameTotal - 1);
+        const willAnimate = COFFEE_SPRITE.animate && endFrame >= 1;
+
+        if (willAnimate && !scene.anims.exists(COFFEE_SPRITE.key + '_anim')) {
+          scene.anims.create({
+            key: COFFEE_SPRITE.key + '_anim',
+            frames: scene.anims.generateFrameNumbers(COFFEE_SPRITE.key, { start: 0, end: endFrame }),
+            frameRate: 10, repeat: -1
+          });
+        }
       }
 
       // === СПАВН ПРЕГРАДЫ ===
@@ -413,7 +577,9 @@
         // весовой выбор
         const totalW = BONUS_POOL.reduce((s, b) => s + b.weight, 0);
         let r = Math.random() * totalW, picked = BONUS_POOL[0];
-        for (const b of BONUS_POOL) { r -= b.weight; if (r <= 0) { picked = b; break; } }
+        for (const b of BONUS_POOL) { r -= b.weight; if (r <= 0) { picked = b; break; }
+
+        }
 
         const margin = 50;
         const x = Phaser.Math.Between(margin, GAME_W - margin);
@@ -438,27 +604,95 @@
         });
       }
 
+      // === СПАВН КОФЕ ===
+      function spawnCoffee(scene) {
+        if (!scene.textures.exists(COFFEE_SPRITE.key)) return;
+
+        const margin = 40;
+        const x = Phaser.Math.Between(margin, GAME_W - margin);
+        const y = GAME_H + 60;
+
+        // физический спрайт кофе
+        const c = scene.physics.add.sprite(x, y, COFFEE_SPRITE.key, 0);
+        c.setOrigin(0.5).setDisplaySize(COFFEE_SPRITE.size, COFFEE_SPRITE.size);
+        c.body.setAllowGravity(false);
+        c.body.setMaxVelocity(1400, 1400);
+        // базовое движение вверх — через физику
+        c.body.setVelocity(0, -scrollSpeed);
+
+        coffees.add(c);
+
+        if (COFFEE_SPRITE.animate && scene.anims.exists(COFFEE_SPRITE.key + '_anim')) {
+          c.play(COFFEE_SPRITE.key + '_anim');
+        } else {
+          c.setFrame(0);
+        }
+
+        // никаких твинов — чтобы не конфликтовать с moveTo
+      }
+
       // === ПОДБОР БОНУСА ===
       function onBonusPickup(player, b) {
         if (!b || !b.type) return;
         const now = performance.now();
 
         if (b.type === 'invuln') {
-          invulnUntil = now + 10000;
+          invulnUntil = now + 8000;
           setActiveBonusHUD(b.label || 'Неуязвимость', invulnUntil);
         }
         else if (b.type === 'halve_speed') {
           halveAccumulatedSpeed();
-          activeBonusUntil = now + 10000;
+          activeBonusUntil = now + 8000;
           activeBonusName = b.label || 'Полусброс скорости';
         }
         else if (b.type === 'clear_path') {
-          clearPathUntil = now + 10000;
+          clearPathUntil = now + 8000;
           obstacles.getChildren().forEach(o => o.destroy());
           setActiveBonusHUD(b.label || 'Чистый путь', clearPathUntil);
         }
+        else if (b.type === 'coffee_magnet') {
+          coffeeMagnetUntil = now + 8000; // 8 сек магнит
+          setActiveBonusHUD(b.label || 'Кофейный магнит', coffeeMagnetUntil);
+        }
+        else if (b.type === 'optimize_code') {
+          optimizeUntil = now + 8000; // 8 сек преграды меньше
+          setActiveBonusHUD(b.label || 'Оптимизация кода', optimizeUntil);
+        }
+        else if (b.type === 'scrum_boost') {
+          scrollSpeed *= 1.5;
+          turnSpeed *= 1.5;
+          coffeeCount += 10;
+          updateCoffeeHUD();
+          activeBonusUntil = now + 8000; // 8 сек эффект
+          activeBonusName = b.label || 'Scrum-ускорение';
+        }
 
         b.destroy();
+      }
+
+      // === ПОДБОР КОФЕ ===
+      function onCoffeePickup(player, c) {
+        if (!c) return;
+        coffeeCount += 1;
+        updateCoffeeHUD();
+
+        // мини-эффект
+        const scene = game.scene.scenes[0];
+        scene.tweens.add({ targets: coffeeText, scaleX: 1.08, scaleY: 1.08, yoyo: true, duration: 120, ease: 'Sine.out' });
+
+        c.destroy();
+      }
+
+      // === МНОЖИТЕЛЬ ОЧКОВ от кофе ===
+      function scoreMultiplier() {
+        return 1 + (coffeeCount * 0.10);
+      }
+
+      function updateCoffeeHUD() {
+        if (coffeeText) {
+          const percent = coffeeCount * 10; // без лимита
+          coffeeText.setText(`+${percent}%`);
+        }
       }
 
       function isInvulnActive() { return performance.now() < invulnUntil; }
@@ -498,15 +732,6 @@
         navigator.serviceWorker.register('./service-worker.js').catch(console.error);
       });
     }
-
-    // Android: кастомная кнопка «Установить» (опционально)
-    // let deferredPrompt;
-    // window.addEventListener('beforeinstallprompt', (e) => {
-    //   e.preventDefault();
-    //   deferredPrompt = e;
-    //   // покажи свою кнопку "Установить"
-    //   // onClick: deferredPrompt.prompt();
-    // });
   </script>
 </body>
 
