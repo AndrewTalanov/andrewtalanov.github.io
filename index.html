@@ -242,10 +242,15 @@
       const playBtn = document.getElementById('playBtn');
       const playBtn2 = document.getElementById('playBtn2');
       const hintSaved = document.getElementById('hintSaved');
+      const gameLayer = document.getElementById('game');
 
       function showOverlay() {
         const saved = (localStorage.getItem('whalePlayerName') || '').trim();
         overlay.removeAttribute('hidden');
+
+        // КРИТИЧЕСКОЕ: блокируем игру, чтобы тачи не уходили в Phaser
+        if (gameLayer) gameLayer.style.pointerEvents = 'none';
+
         if (saved) {
           nameRow.style.display = 'none';
           helloRow.style.display = 'flex';
@@ -257,7 +262,11 @@
           setTimeout(() => input.focus(), 50);
         }
       }
-      function hideOverlay() { overlay.setAttribute('hidden', ''); }
+      function hideOverlay() {
+        overlay.setAttribute('hidden', '');
+        // Возвращаем управление игре
+        if (gameLayer) gameLayer.style.pointerEvents = 'auto';
+      }
 
       async function startFromName(name) {
         const clean = (name || '').trim().slice(0, 40);
@@ -416,7 +425,7 @@
           fontFamily: 'system-ui,Segoe UI,Roboto,Arial', fontSize: '22px', color: '#e0ffe0',
           backgroundColor: '#00000066', padding: { x: 10, y: 3 }
         }).setOrigin(1, 0)
-          .setDepth(100)    
+          .setDepth(100)
           .setScrollFactor(0);
 
         restartBtn = this.add.text(GAME_W / 2, GAME_H / 2 + 80, 'Играть снова?', {
