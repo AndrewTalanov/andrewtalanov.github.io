@@ -137,6 +137,14 @@
     #game.blocked {
       pointer-events: none !important;
     }
+
+    .overlay,
+    .card,
+    .row,
+    .input,
+    .btn {
+      touch-action: auto !important;
+    }
   </style>
 </head>
 
@@ -248,12 +256,17 @@
       const hintSaved = document.getElementById('hintSaved');
       const gameLayer = document.getElementById('game');
 
+
+
       function showOverlay() {
         const saved = (localStorage.getItem('whalePlayerName') || '').trim();
         overlay.removeAttribute('hidden');
 
-        // Жёстко блокируем все клики для Phaser-слоя, чтобы тапы уходили в модалку
+        // Блокируем клики по слою игры (на всякий случай)
         gameLayer?.classList.add('blocked');
+
+        // Если Phaser уже поднялся — выключим его input (главное лекарство)
+        try { window.__phaserSetInputEnabled && window.__phaserSetInputEnabled(false); } catch { }
 
         if (saved) {
           nameRow.style.display = 'none';
@@ -268,8 +281,12 @@
       }
       function hideOverlay() {
         overlay.setAttribute('hidden', '');
-        // Возвращаем управление игре
+
+        // Возвращаем клики игре
         gameLayer?.classList.remove('blocked');
+
+        // И снова включаем input у Phaser
+        try { window.__phaserSetInputEnabled && window.__phaserSetInputEnabled(true); } catch { }
       }
 
       async function startFromName(name) {
@@ -286,7 +303,23 @@
       }
 
       playBtn?.addEventListener('click', () => startFromName(input.value));
+      playBtn2?.addEventListener('pointerup', () => {
+        hideOverlay();
+        window.__startAfterOverlay && window.__startAfterOverlay();
+      });
       input?.addEventListener('keydown', (e) => { if (e.key === 'Enter') startFromName(input.value); });
+      playBtn2?.addEventListener('click', () => {
+        hideOverlay();
+        window.__startAfterOverlay && window.__startAfterOverlay();
+      });
+
+      playBtn?.addEventListener('pointerup', () => startFromName(input.value));
+      playBtn?.addEventListener('click', () => startFromName(input.value));
+
+      playBtn2?.addEventListener('pointerup', () => {
+        hideOverlay();
+        window.__startAfterOverlay && window.__startAfterOverlay();
+      });
       playBtn2?.addEventListener('click', () => {
         hideOverlay();
         window.__startAfterOverlay && window.__startAfterOverlay();
@@ -382,6 +415,9 @@
       }
 
       function create() {
+        window.__phaserSetInputEnabled = (flag) => {
+          try { this.input.enabled = !!flag; } catch { }
+        };
         if (USE_BUILTINS) makeBuiltinTextures(this);
 
         registerObstacleSprites(this);
@@ -467,9 +503,15 @@
           lastSpawn = this.time.now;
           if (coffeeTimerEvent) coffeeTimerEvent.paused = false;
           if (bonusTimerEvent) bonusTimerEvent.paused = false;
+          // Теперь можно вернуть инпуты сцене
+          this.input.enabled = true;
         };
 
         const savedName = (localStorage.getItem('whalePlayerName') || '').trim();
+        if (!savedName) {
+          // Пока поверх модалка — игра не должна ловить тапы
+          this.input.enabled = false;
+        }
 
         this.scale.on('resize', () => layoutUI(this), this);
         layoutUI(this);
