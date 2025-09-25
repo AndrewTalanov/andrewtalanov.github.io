@@ -256,16 +256,12 @@
       const hintSaved = document.getElementById('hintSaved');
       const gameLayer = document.getElementById('game');
 
-
-
       function showOverlay() {
         const saved = (localStorage.getItem('whalePlayerName') || '').trim();
         overlay.removeAttribute('hidden');
 
-        // Блокируем клики по слою игры (на всякий случай)
+        // игра не ловит тапы, пока открыта модалка
         gameLayer?.classList.add('blocked');
-
-        // Если Phaser уже поднялся — выключим его input (главное лекарство)
         try { window.__phaserSetInputEnabled && window.__phaserSetInputEnabled(false); } catch { }
 
         if (saved) {
@@ -276,16 +272,15 @@
           nameRow.style.display = 'flex';
           helloRow.style.display = 'none';
           input.value = '';
+
+          // автофокус после показа — помогает на Android/desktop
           setTimeout(() => input.focus(), 50);
         }
       }
+
       function hideOverlay() {
         overlay.setAttribute('hidden', '');
-
-        // Возвращаем клики игре
         gameLayer?.classList.remove('blocked');
-
-        // И снова включаем input у Phaser
         try { window.__phaserSetInputEnabled && window.__phaserSetInputEnabled(true); } catch { }
       }
 
@@ -293,26 +288,20 @@
         const clean = (name || '').trim().slice(0, 40);
         if (!clean) { input?.focus(); return; }
         localStorage.setItem('whalePlayerName', clean);
-
-        // синхронизируем рекорд с сервера перед стартом
         await apiRegisterName(clean);
-
         hintSaved.style.display = 'block';
         hideOverlay();
         window.__startAfterOverlay && window.__startAfterOverlay();
       }
 
-      playBtn?.addEventListener('click', () => startFromName(input.value));
-      playBtn2?.addEventListener('pointerup', () => {
-        hideOverlay();
-        window.__startAfterOverlay && window.__startAfterOverlay();
-      });
-      input?.addEventListener('keydown', (e) => { if (e.key === 'Enter') startFromName(input.value); });
-      playBtn2?.addEventListener('click', () => {
-        hideOverlay();
-        window.__startAfterOverlay && window.__startAfterOverlay();
-      });
+      // === фиксы ввода на мобильных (особенно iOS) ===
+      // 1) Явный фокус по окончании тапа — поднимает клавиатуру стабильно
+      input.addEventListener('touchend', () => { input.focus(); }, { passive: true });
 
+      // 2) Клик по самому инпуту тоже форсит фокус (на всякий)
+      input.addEventListener('click', () => { input.focus(); });
+
+      // === обработчики кнопок (без дублей) ===
       playBtn?.addEventListener('pointerup', () => startFromName(input.value));
       playBtn?.addEventListener('click', () => startFromName(input.value));
 
@@ -325,7 +314,11 @@
         window.__startAfterOverlay && window.__startAfterOverlay();
       });
 
-      // Показать на старте только если имени нет
+      input?.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') startFromName(input.value);
+      });
+
+      // Показываем модалку только если имени ещё нет
       if (!(localStorage.getItem('whalePlayerName') || '').trim()) showOverlay();
     })();
   </script>
