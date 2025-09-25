@@ -207,11 +207,20 @@
     // ===== простые запросы на бэк =====
     async function apiRegisterName(name) {
       try {
-        await fetch('http://109.73.205.64:8090/whale/register', {
-          method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ name, ts: Date.now() }), keepalive: true
+        const r = await fetch('http://109.73.205.64:8090/whale/register', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name }),
+          keepalive: true
         });
+        const js = await r.json().catch(() => null);
+        if (r.ok && js && typeof js.best_score === 'number') {
+          // сохраняем серверный рекорд локально — сразу «подтягиваем данные»
+          localStorage.setItem('bestWhaleScore', String(js.best_score));
+          return js.best_score;
+        }
       } catch (_) { }
+      return null;
     }
     async function apiReportScore(name, score, best) {
       try {
@@ -250,14 +259,17 @@
       }
       function hideOverlay() { overlay.setAttribute('hidden', ''); }
 
-      function startFromName(name) {
+      async function startFromName(name) {
         const clean = (name || '').trim().slice(0, 40);
         if (!clean) { input?.focus(); return; }
         localStorage.setItem('whalePlayerName', clean);
+
+        // синхронизируем рекорд с сервера перед стартом
+        await apiRegisterName(clean);
+
         hintSaved.style.display = 'block';
         hideOverlay();
         window.__startAfterOverlay && window.__startAfterOverlay();
-        apiRegisterName(clean);         // <— сообщаем на «бэк»
       }
 
       playBtn?.addEventListener('click', () => startFromName(input.value));
@@ -299,10 +311,10 @@
       const USE_BUILTINS = true;
 
       const BONUS_SPRITES = [
-        { key: 'b_invuln', url: './rud.png', frameWidth: 256, frameHeight: 256, size: 90, animate: true, enabled: true, type: 'invuln', weight: 3, label: 'Неуязвимость!!!' },
-        { key: 'b_halve', url: './nad.png', frameWidth: 256, frameHeight: 256, size: 90, animate: true, enabled: true, type: 'halve_speed', weight: 3, label: '+5 задач, плыть стало тяжелее' },
-        { key: 'b_clear', url: './rev.png', frameWidth: 256, frameHeight: 256, size: 95, animate: true, enabled: true, type: 'clear_path', weight: 1, label: 'Никаких преград!' },
-        { key: 'b_coffeeMagnet', url: './ylia.png', frameWidth: 256, frameHeight: 256, size: 115, animate: true, enabled: true, type: 'coffee_magnet', weight: 2, label: 'Кофейный магнит' },
+        { key: 'b_invuln', url: './rud.png', frameWidth: 256, frameHeight: 256, size: 90, animate: true, enabled: true, type: 'invuln', weight: 3, label: 'Преграды не страшны!' },
+        { key: 'b_halve', url: './nad.png', frameWidth: 256, frameHeight: 256, size: 90, animate: true, enabled: true, type: 'halve_speed', weight: 3, label: 'Гора задач! Двигаюсь медленнее...' },
+        { key: 'b_clear', url: './rev.png', frameWidth: 256, frameHeight: 256, size: 95, animate: true, enabled: true, type: 'clear_path', weight: 1, label: 'Чистый курс — никаких препятствий!' },
+        { key: 'b_coffeeMagnet', url: './ylia.png', frameWidth: 256, frameHeight: 256, size: 115, animate: true, enabled: true, type: 'coffee_magnet', weight: 2, label: 'Все кофе мира теперь моё ☕' },
       ];
 
       const COFFEE_SPRITE = { key: 'c_coffee', url: './coffee.png', frameWidth: 256, frameHeight: 256, size: 70, animate: true, enabled: true };
@@ -419,7 +431,7 @@
 
         bonusLabel = this.add.text(GAME_W / 2, GAME_H - 60, '', {
           fontFamily: 'system-ui,Segoe UI,Roboto,Arial',
-          fontSize: '22px',
+          fontSize: '20px',
           color: '#e0ffe0',
           backgroundColor: '#00000066',
           padding: { x: 20, y: 10 },
@@ -457,6 +469,11 @@
           lastSpawn = this.time.now;
           if (coffeeTimerEvent) coffeeTimerEvent.paused = false;
           if (bonusTimerEvent) bonusTimerEvent.paused = false;
+        }
+
+        if (savedName) {
+          // подтягиваем best_score с сервера для этого имени
+          apiRegisterName(savedName);
         }
       }
 
@@ -637,7 +654,7 @@
         apiReportScore(name, s, best);
 
         game.scene.scenes[0].add.text(cam.worldView.centerX, cam.worldView.centerY - 20,
-          `Game Over\nСчёт: ${s}\nРекорд: ${best}`, {
+          `Что то пошло не так...\nСчёт: ${s}\nРекорд: ${best}`, {
           fontFamily: 'system-ui,Segoe UI,Roboto,Arial', fontSize: '28px', color: '#e0ffe0',
           align: 'center', backgroundColor: '#000000aa', padding: { x: 16, y: 12 }
         }).setOrigin(0.5).setDepth(10);
