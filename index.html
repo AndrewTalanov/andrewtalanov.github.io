@@ -7,7 +7,7 @@
     content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1, user-scalable=no" />
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="default">
-  <title>Whale Run — Phaser 3</title>
+  <title>КИТ</title>
   <link rel="manifest" href="./manifest.json">
   <meta name="theme-color" content="#000000">
   <meta name="apple-mobile-web-app-capable" content="yes">
@@ -18,8 +18,6 @@
     body {
       height: 100%;
       margin: 0;
-      /* background: #79cff5; */
-      /* чёрный фон для классической "матрицы" */
       overscroll-behavior: none;
     }
 
@@ -27,10 +25,8 @@
       position: fixed;
       inset: 0;
       z-index: 0;
-      /* ниже игры */
       display: block;
       pointer-events: none;
-      /* не мешает тапам/кликам по игре */
       background: transparent;
     }
 
@@ -41,7 +37,6 @@
       height: 100svh;
       touch-action: none;
       z-index: 1;
-      /* игра поверх */
     }
 
     .hint {
@@ -53,6 +48,91 @@
       color: #e0e0e0;
       opacity: .6
     }
+
+    /* ===== Стартовый экран (только UI) ===== */
+    .overlay {
+      position: fixed;
+      inset: 0;
+      z-index: 9999;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: max(12px, env(safe-area-inset-top)) max(12px, env(safe-area-inset-right)) max(16px, env(safe-area-inset-bottom)) max(12px, env(safe-area-inset-left));
+      background: radial-gradient(1200px 800px at 50% 40%, rgba(0, 0, 0, .55), rgba(0, 0, 0, .85));
+      backdrop-filter: blur(2px);
+    }
+
+    /* гарантированно скрываем модалку, если есть атрибут hidden */
+    .overlay[hidden] {
+      display: none !important;
+    }
+
+    .card {
+      width: min(520px, 100%);
+      border-radius: 16px;
+      background: #0a1c28f2;
+      color: #e6f7ff;
+      padding: 16px 14px 12px;
+      box-shadow: 0 10px 30px rgba(0, 0, 0, .35);
+      font-family: system-ui, Segoe UI, Roboto, Arial, sans-serif;
+    }
+
+    .card h1 {
+      margin: 0 0 8px;
+      font-size: 22px;
+      line-height: 1.2;
+      color: #b7ebff;
+    }
+
+    .card p {
+      margin: 8px 0;
+      font-size: 15px;
+      color: #d8f2ff;
+      opacity: .98;
+    }
+
+    .row {
+      display: flex;
+      gap: 8px;
+      margin-top: 10px;
+    }
+
+    .input {
+      flex: 1;
+      height: 42px;
+      padding: 0 12px;
+      border-radius: 10px;
+      border: 1px solid #1f4157;
+      background: #0c2433;
+      color: #e6f7ff;
+      outline: none;
+      font-size: 15px;
+    }
+
+    .btn {
+      height: 42px;
+      padding: 0 14px;
+      border-radius: 10px;
+      border: 1px solid #2a6fa0;
+      background: #1283c7;
+      color: #fff;
+      font-weight: 600;
+      cursor: pointer;
+    }
+
+    .btn:active {
+      transform: translateY(1px);
+    }
+
+    .muted {
+      font-size: 13px;
+      opacity: .85;
+      margin-top: 8px;
+    }
+
+    .center {
+      text-align: center;
+    }
   </style>
 </head>
 
@@ -62,74 +142,138 @@
 
   <!-- Игра -->
   <div id="game"></div>
-  <!-- <div class="hint">тап/клик — сменить направление • Space — смена • R — рестарт</div> -->
+
+  <!-- ===== Стартовый экран ===== -->
+  <div id="startOverlay" class="overlay" hidden>
+    <div class="card">
+      <h1>КИТ</h1>
+      <p>Тут наш кит плывёт по цифровому морю и собирает кофе ☕ — оно увеличивает продуктивность и ускоряет набор очков.
+      </p>
+      <p>Иногда попадутся знакомые лица — попробуй их поймать 😉</p>
+      <p class="muted">Управление: просто жми на экран (или пробел), чтобы менять направление и плыть дальше.</p>
+
+      <div id="nameRow" class="row">
+        <input id="playerName" class="input" placeholder="Ваше имя" maxlength="40" />
+        <button id="playBtn" class="btn">Играть</button>
+      </div>
+
+      <div id="helloRow" class="row" style="display:none; justify-content:space-between; align-items:center;">
+        <span id="helloText" class="muted" style="margin:0 6px 0 2px;">Готовы?</span>
+        <button id="playBtn2" class="btn">Играть</button>
+      </div>
+
+      <p id="hintSaved" class="muted center" style="display:none;">Имя сохранено. Удачи!</p>
+    </div>
+  </div>
 
   <script src="./phaser.min.js"></script>
 
   <script>
-    // ===== DIGITAL RAIN ("Матрица") на всём экране =====
+    // ===== DIGITAL RAIN ("Матрица") =====
     (function initMatrix() {
       const canvas = document.getElementById('matrix');
       const ctx = canvas.getContext('2d');
-
       let letters = 'ABCDEFGHIJKLMNOPQRSTUVXYZ';
       letters = (letters + letters + letters + letters + letters + letters).split('');
-
-      let fontSize = 14;     // размер символа
-      let columns = 0;       // количество колонок
-      let drops = [];        // "капли" на колонку
-      let raf = 0;
+      let fontSize = 14, columns = 0, drops = [], raf = 0;
 
       function resize() {
         const dpr = Math.max(1, Math.min(2, window.devicePixelRatio || 1));
-        const w = window.innerWidth;
-        const h = window.innerHeight;
-
-        canvas.width = Math.floor(w * dpr);
-        canvas.height = Math.floor(h * dpr);
-        canvas.style.width = w + 'px';
-        canvas.style.height = h + 'px';
+        const w = window.innerWidth, h = window.innerHeight;
+        canvas.width = Math.floor(w * dpr); canvas.height = Math.floor(h * dpr);
+        canvas.style.width = w + 'px'; canvas.style.height = h + 'px';
         ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-
         columns = Math.ceil(w / fontSize);
         drops = new Array(columns).fill(1);
         ctx.font = `${fontSize}px monospace`;
       }
-
       function draw() {
-        // "шлейф"
-        ctx.fillStyle = 'rgba(121, 207, 245, 0.1)';
-        ctx.fillRect(0, 0, canvas.width, canvas.height);
-
+        ctx.fillStyle = 'rgba(121, 207, 245, 0.1)'; ctx.fillRect(0, 0, canvas.width, canvas.height);
         for (let i = 0; i < drops.length; i++) {
           const text = letters[Math.floor(Math.random() * letters.length)];
-          ctx.fillStyle = 'rgba(0, 120, 200, 0.25)';
-          ctx.fillText(text, i * fontSize, drops[i] * fontSize);
-
-          // drops[i]++;
+          ctx.fillStyle = 'rgba(0, 120, 200, 0.25)'; ctx.fillText(text, i * fontSize, drops[i] * fontSize);
           drops[i] += 0.5;
-          if (drops[i] * fontSize > window.innerHeight && Math.random() > 0.95) {
-            drops[i] = 0;
-          }
+          if (drops[i] * fontSize > window.innerHeight && Math.random() > 0.95) drops[i] = 0;
         }
         raf = requestAnimationFrame(draw);
       }
-
-      // Старт/стоп при сворачивании
       document.addEventListener('visibilitychange', () => {
-        if (document.hidden) cancelAnimationFrame(raf);
-        else raf = requestAnimationFrame(draw);
+        if (document.hidden) cancelAnimationFrame(raf); else raf = requestAnimationFrame(draw);
+      });
+      window.addEventListener('resize', resize, { passive: true });
+      resize(); raf = requestAnimationFrame(draw);
+    })();
+
+    // ===== простые запросы на бэк =====
+    async function apiRegisterName(name) {
+      try {
+        await fetch('http://109.73.205.64:8090/whale/register', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name, ts: Date.now() }), keepalive: true
+        });
+      } catch (_) { }
+    }
+    async function apiReportScore(name, score, best) {
+      try {
+        await fetch('http://109.73.205.64:8090/whale/score', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name, score, best, event: 'game_over', ts: Date.now() }),
+          keepalive: true
+        });
+      } catch (_) { }
+    }
+
+    // ===== Стартовый экран =====
+    (function initStartOverlay() {
+      const overlay = document.getElementById('startOverlay');
+      const nameRow = document.getElementById('nameRow');
+      const helloRow = document.getElementById('helloRow');
+      const helloText = document.getElementById('helloText');
+      const input = document.getElementById('playerName');
+      const playBtn = document.getElementById('playBtn');
+      const playBtn2 = document.getElementById('playBtn2');
+      const hintSaved = document.getElementById('hintSaved');
+
+      function showOverlay() {
+        const saved = (localStorage.getItem('whalePlayerName') || '').trim();
+        overlay.removeAttribute('hidden');
+        if (saved) {
+          nameRow.style.display = 'none';
+          helloRow.style.display = 'flex';
+          helloText.textContent = `Привет, ${saved}!`;
+        } else {
+          nameRow.style.display = 'flex';
+          helloRow.style.display = 'none';
+          input.value = '';
+          setTimeout(() => input.focus(), 50);
+        }
+      }
+      function hideOverlay() { overlay.setAttribute('hidden', ''); }
+
+      function startFromName(name) {
+        const clean = (name || '').trim().slice(0, 40);
+        if (!clean) { input?.focus(); return; }
+        localStorage.setItem('whalePlayerName', clean);
+        hintSaved.style.display = 'block';
+        hideOverlay();
+        window.__startAfterOverlay && window.__startAfterOverlay();
+        apiRegisterName(clean);         // <— сообщаем на «бэк»
+      }
+
+      playBtn?.addEventListener('click', () => startFromName(input.value));
+      input?.addEventListener('keydown', (e) => { if (e.key === 'Enter') startFromName(input.value); });
+      playBtn2?.addEventListener('click', () => {
+        hideOverlay();
+        window.__startAfterOverlay && window.__startAfterOverlay();
       });
 
-      window.addEventListener('resize', resize, { passive: true });
-
-      resize();
-      raf = requestAnimationFrame(draw);
+      // Показать на старте только если имени нет
+      if (!(localStorage.getItem('whalePlayerName') || '').trim()) showOverlay();
     })();
   </script>
 
   <script>
-    // ===== ИГРА (Phaser) =====
+    // ===== ИГРА (Phaser) — LOGIC как в исходнике =====
     (() => {
       const GAME_W = 480, GAME_H = 800;
 
@@ -145,10 +289,8 @@
       let coffeeMagnetUntil = 0;
       let optimizeUntil = 0;
 
-      // UI/адаптив
-      const SAFE_PAD = 20; // отступы баннера от краёв
+      const SAFE_PAD = 20;
 
-      // === ВНЕШНИЕ СПРАЙТЫ ПРЕГРАД ===
       const OBSTACLE_SPRITES = [
         { key: 'o_island', url: './bag.png', frameWidth: 256, frameHeight: 256, size: 90, animate: true, enabled: true },
         { key: 'o_buoy', url: './fire.png', frameWidth: 256, frameHeight: 256, size: 90, animate: true, enabled: true },
@@ -156,28 +298,22 @@
       ];
       const USE_BUILTINS = true;
 
-      // === БОНУСЫ ===
-      // type: 'invuln' | 'halve_speed' | 'clear_path'
       const BONUS_SPRITES = [
         { key: 'b_invuln', url: './rud.png', frameWidth: 256, frameHeight: 256, size: 90, animate: true, enabled: true, type: 'invuln', weight: 3, label: 'Неуязвимость!!!' },
         { key: 'b_halve', url: './nad.png', frameWidth: 256, frameHeight: 256, size: 90, animate: true, enabled: true, type: 'halve_speed', weight: 3, label: '+5 задач, плыть стало тяжелее' },
-        { key: 'b_clear', url: './rev.png', frameWidth: 256, frameHeight: 256, size: 80, animate: true, enabled: true, type: 'clear_path', weight: 1, label: 'Никаких преград!' },
-        { key: 'b_coffeeMagnet', url: './ylia.png', frameWidth: 256, frameHeight: 256, size: 80, animate: true, enabled: true, type: 'coffee_magnet', weight: 2, label: 'Кофейный магнит' },
-        
-        // { key: 'b_optimize', url: './rev.png', frameWidth: 256, frameHeight: 256, size: 80, animate: true, enabled: true, type: 'optimize_code', weight: 2, label: 'Оптимизация кода' },
-        // { key: 'b_scrum', url: './rev.png', frameWidth: 256, frameHeight: 256, size: 80, animate: true, enabled: true, type: 'scrum_boost', weight: 1, label: 'Scrum-ускорение' },
+        { key: 'b_clear', url: './rev.png', frameWidth: 256, frameHeight: 256, size: 95, animate: true, enabled: true, type: 'clear_path', weight: 1, label: 'Никаких преград!' },
+        { key: 'b_coffeeMagnet', url: './ylia.png', frameWidth: 256, frameHeight: 256, size: 115, animate: true, enabled: true, type: 'coffee_magnet', weight: 2, label: 'Кофейный магнит' },
       ];
 
-      // === КОФЕ (монетки) ===
-      const COFFEE_SPRITE = { key: 'c_coffee', url: './coffee.png', frameWidth: 256, frameHeight: 256, size: 85, animate: true, enabled: true };
-      const COFFEE_SPAWN_MS = 3500; // период появления кофе
+      const COFFEE_SPRITE = { key: 'c_coffee', url: './coffee.png', frameWidth: 256, frameHeight: 256, size: 70, animate: true, enabled: true };
+      const COFFEE_SPAWN_MS = 3500;
 
       const config = {
         type: Phaser.AUTO,
         parent: 'game',
         width: GAME_W,
         height: GAME_H,
-        transparent: true, // фон игры прозрачный — видно "матрицу"
+        transparent: true,
         physics: { default: 'arcade', arcade: { debug: false } },
         scale: { mode: Phaser.Scale.FIT, autoCenter: Phaser.Scale.CENTER_BOTH },
         scene: { preload, create, update }
@@ -193,51 +329,47 @@
       const OBSTACLE_POOL = [];
       const BONUS_POOL = [];
 
-      // активные эффекты
       let invulnUntil = 0;
       let clearPathUntil = 0;
       let bonusLabel, activeBonusName = '', activeBonusUntil = 0;
 
-      // кофе
       let coffeeCount = 0;
-      let coffeeTimerEvent = null;
+      let coffeeTimerEvent = null;   // <— только кофе таймер храним (нужно, чтобы остановить на Game Over)
+      let bonusTimerEvent = null;
 
-      // >>> цель для «магнита»: координаты HUD-уголка, куда летит кофе
       let coffeeTarget = { x: 0, y: 0 };
 
+      let started = false
+
       function preload() {
-        // кит
         if (location.protocol === 'http:' || location.protocol === 'https:') {
           this.load.spritesheet('whale', 'kit.png', { frameWidth: 256, frameHeight: 256 });
         }
-        // преграды
         OBSTACLE_SPRITES.filter(o => o.enabled).forEach(o => {
           this.load.spritesheet(o.key, o.url, { frameWidth: o.frameWidth, frameHeight: o.frameHeight });
         });
-        // бонусы
         BONUS_SPRITES.filter(b => b.enabled).forEach(b => {
           this.load.spritesheet(b.key, b.url, { frameWidth: b.frameWidth, frameHeight: b.frameHeight });
         });
-        // кофе
         if (COFFEE_SPRITE.enabled) {
           this.load.spritesheet(COFFEE_SPRITE.key, COFFEE_SPRITE.url, { frameWidth: COFFEE_SPRITE.frameWidth, frameHeight: COFFEE_SPRITE.frameHeight });
         }
-        // НИКАКОГО back.png — убрано
       }
 
       function create() {
-        // базовые текстуры
         if (USE_BUILTINS) makeBuiltinTextures(this);
 
         registerObstacleSprites(this);
         registerBonusSprites(this);
         registerCoffeeSprite(this);
 
-        // физтело игрока
         playerBody = this.physics.add.sprite(GAME_W / 2, GAME_H * 0.15, USE_BUILTINS ? 'placeholder' : (this.textures.exists('whale') ? 'whale' : null));
-        playerBody.setVisible(false).setSize(24, 24).setOffset(12, 16).setCollideWorldBounds(true);
+        playerBody
+          .setVisible(false)
+          .setSize(24, 24)
+          .setOffset(12, 16)
+          .setCollideWorldBounds(true);   // <— как в исходнике
 
-        // кит
         if (this.textures.exists('whale')) {
           if (!this.anims.exists('swim')) {
             this.anims.create({ key: 'swim', frames: this.anims.generateFrameNumbers('whale', { start: 0, end: 3 }), frameRate: 10, repeat: -1 });
@@ -247,22 +379,18 @@
           whaleSprite.setDisplaySize(WHALE_BASE_SCALE, WHALE_BASE_SCALE).setDepth(5);
         }
 
-        // группы
         obstacles = this.physics.add.group({ allowGravity: false, immovable: true });
         bonuses = this.physics.add.group({ allowGravity: false, immovable: true });
         coffees = this.physics.add.group({ allowGravity: false, immovable: true });
 
-        // столкновения
         this.physics.add.overlap(playerBody, obstacles, onHit, null, this);
         this.physics.add.overlap(playerBody, bonuses, onBonusPickup, null, this);
         this.physics.add.overlap(playerBody, coffees, onCoffeePickup, null, this);
 
-        // управление
         this.input.on('pointerdown', toggleDirection);
         this.input.keyboard.on('keydown-SPACE', toggleDirection);
         this.input.keyboard.on('keydown-R', () => { if (gameOver) this.scene.restart(); });
 
-        // HUD
         score = 0;
         coffeeCount = 0;
 
@@ -303,22 +431,42 @@
 
         resetStateAndOrient(this);
 
-        this.time.addEvent({ delay: 10000, loop: true, callback: () => spawnBonus(this) });
-        coffeeTimerEvent = this.time.addEvent({ delay: COFFEE_SPAWN_MS, loop: true, callback: () => spawnCoffee(this) });
+        // как в исходнике: бонусы — без хранения ссылки; кофе — храним в переменной
+        bonusTimerEvent = this.time.addEvent({ delay: 10000, loop: true, callback: () => spawnBonus(this), paused: true });
+        coffeeTimerEvent = this.time.addEvent({ delay: COFFEE_SPAWN_MS, loop: true, callback: () => spawnCoffee(this), paused: true });
+
+        // функция, которую дергают кнопки модалки — снимает «паузу старта»
+        window.__startAfterOverlay = () => {
+          if (started) return;
+          started = true;
+          lastSpawn = this.time.now;
+          if (coffeeTimerEvent) coffeeTimerEvent.paused = false;
+          if (bonusTimerEvent) bonusTimerEvent.paused = false;
+        };
+
+        const savedName = (localStorage.getItem('whalePlayerName') || '').trim();
 
         this.scale.on('resize', () => layoutUI(this), this);
         layoutUI(this);
 
         this.events.on('shutdown', () => { if (whaleTiltTween) { whaleTiltTween.stop(); whaleTiltTween = null; } });
         this.events.on('destroy', () => { if (whaleTiltTween) { whaleTiltTween.stop(); whaleTiltTween = null; } });
+
+        if (savedName) {
+          started = true;
+          lastSpawn = this.time.now;
+          if (coffeeTimerEvent) coffeeTimerEvent.paused = false;
+          if (bonusTimerEvent) bonusTimerEvent.paused = false;
+        }
       }
 
       function update(time, delta) {
-        if (gameOver) return;
+        if (!started) return;
+        if (gameOver) return;                 // <— как в исходнике
         const dt = delta / 1000;
 
         playerBody.setVelocityX(dir * turnSpeed);
-        if (playerBody.body.blocked.left || playerBody.body.blocked.right) { onHit(); return; }
+        if (playerBody.body.blocked.left || playerBody.body.blocked.right) { onHit(); return; }  // <— как было
 
         if (whaleSprite) { whaleSprite.x = playerBody.x; whaleSprite.y = playerBody.y; }
 
@@ -327,63 +475,39 @@
           if (!isClearPathActive()) spawnObstacle(this);
         }
 
-        // движение объектов вверх
         obstacles.getChildren().forEach(o => { o.y -= scrollSpeed * dt; if (o.y < -100) o.destroy(); });
         bonuses.getChildren().forEach(b => { b.y -= scrollSpeed * dt * 0.9; if (b.y < -100) b.destroy(); });
 
-        // кофе: чистим вылетевшие
         coffees.getChildren().forEach(c => { if (c.y < -120) c.destroy(); });
 
-        // === СЧЁТ с МНОЖИТЕЛЕМ от кофе ===
         const mult = scoreMultiplier();
         score += scrollSpeed * dt * 0.05 * mult;
         scoreText.setText(Math.floor(score).toString());
         scrollSpeed += speedIncrease;
         if (turnSpeed < 320) turnSpeed += speedIncrease * 0.5;
 
-        // === КОФЕ: базовое движение (без магнита) — летит вверх через физику
+        // Базовое движение кофе (кроме магнита)
         if (!(coffeeMagnetUntil && performance.now() < coffeeMagnetUntil)) {
-          coffees.getChildren().forEach(c => {
-            if (!c.body) return;
-            c.body.setVelocity(0, -scrollSpeed);
-          });
+          coffees.getChildren().forEach(c => { if (c.body) c.body.setVelocity(0, -scrollSpeed); });
         }
 
-        // === КОФЕ: магнит — летим в правый верх (к HUD) и автособираемся
+        // Магнит к HUD
         if (coffeeMagnetUntil && performance.now() < coffeeMagnetUntil) {
-          const speedToHUD = 900;   // скорость полёта к HUD
-          const collectR = 18;      // радиус автосбора у HUD
-
+          const speedToHUD = 900, collectR = 18;
           coffees.getChildren().forEach(c => {
             if (!c.body) return;
-
-            // направляем к цели
             this.physics.moveTo(c, coffeeTarget.x, coffeeTarget.y, speedToHUD);
-
-            // чек на «долёт»
-            const dx = coffeeTarget.x - c.x;
-            const dy = coffeeTarget.y - c.y;
+            const dx = coffeeTarget.x - c.x, dy = coffeeTarget.y - c.y;
             if (dx * dx + dy * dy <= collectR * collectR) {
-              coffeeCount += 1;
-              updateCoffeeHUD();
-
-              // мини-эффект HUD
-              this.tweens.add({
-                targets: coffeeText,
-                scaleX: 1.08, scaleY: 1.08,
-                yoyo: true, duration: 120, ease: 'Sine.out'
-              });
-
+              coffeeCount += 1; updateCoffeeHUD();
+              this.tweens.add({ targets: coffeeText, scaleX: 1.08, scaleY: 1.08, yoyo: true, duration: 120, ease: 'Sine.out' });
               c.destroy();
             }
           });
         }
 
-        // эффект оптимизации кода
         if (optimizeUntil && performance.now() < optimizeUntil) {
-          obstacles.getChildren().forEach(o => {
-            o.setScale(0.7);
-          });
+          obstacles.getChildren().forEach(o => { o.setScale(0.7); });
         }
 
         updateBonusHUD();
@@ -391,7 +515,6 @@
 
       // ===== helpers =====
       function resetStateAndOrient(scene) {
-        // базовые параметры
         dir = Math.random() < 0.5 ? -1 : 1;
         gameOver = false;
         scrollSpeed = BASE_SCROLL;
@@ -403,7 +526,6 @@
         coffeeCount = 0;
         updateCoffeeHUD();
 
-        // визуал кита: сброс угла/твинов, установка флипа под dir, лёгкий «кивок»
         if (whaleTiltTween) { whaleTiltTween.stop(); whaleTiltTween = null; }
         if (whaleSprite) {
           whaleSprite.setAngle(0);
@@ -428,9 +550,8 @@
           coffeeText.setOrigin(1, 0);
         }
 
-        // >>> обновляем точку-цель для полёта кофе
-        coffeeTarget.x = GAME_W - SAFE_PAD - 8; // чуть левее края
-        coffeeTarget.y = 28;                     // рядом с coffeeText
+        coffeeTarget.x = GAME_W - SAFE_PAD - 8;
+        coffeeTarget.y = 28;
 
         const SAFE_PAD_LOCAL = 20;
         bonusLabel.setFixedSize(GAME_W - SAFE_PAD_LOCAL * 2, bonusLabel.height);
@@ -448,6 +569,48 @@
         whaleTiltTween = game.scene.scenes[0].tweens.add({ targets: whaleSprite, angle: 0, duration: 120, ease: 'Sine.out' });
       }
 
+      // === ПОДБОР БОНУСА ===
+      function onBonusPickup(player, b) {
+        if (!b || !b.type) return;
+        const now = performance.now();
+
+        if (b.type === 'invuln') {
+          invulnUntil = now + 8000;
+          setActiveBonusHUD(b.label || 'Неуязвимость', invulnUntil);
+        }
+        else if (b.type === 'halve_speed') {
+          halveAccumulatedSpeed();
+          activeBonusUntil = now + 8000;
+          activeBonusName = b.label || 'Полусброс скорости';
+        }
+        else if (b.type === 'clear_path') {
+          clearPathUntil = now + 8000;
+          obstacles.getChildren().forEach(o => o.destroy());
+          setActiveBonusHUD(b.label || 'Никаких преград!', clearPathUntil);
+        }
+        else if (b.type === 'coffee_magnet') {
+          coffeeMagnetUntil = now + 8000; // 8 сек магнит
+          setActiveBonusHUD(b.label || 'Кофейный магнит', coffeeMagnetUntil);
+        }
+        else if (b.type === 'optimize_code') {
+          optimizeUntil = now + 8000; // 8 сек преграды меньше
+          setActiveBonusHUD(b.label || 'Оптимизация кода', optimizeUntil);
+        }
+
+        b.destroy();
+      }
+
+      // === ПОДБОР КОФЕ ===
+      function onCoffeePickup(player, c) {
+        if (!c) return;
+        coffeeCount += 1;
+        updateCoffeeHUD();
+        const scene = game.scene.scenes[0];
+        scene.tweens.add({ targets: coffeeText, scaleX: 1.08, scaleY: 1.08, yoyo: true, duration: 120, ease: 'Sine.out' });
+        c.destroy();
+      }
+
+      // === УДАР / ПРОИГРЫШ — как в исходном коде (без world.pause), + стоп кофе ===
       function onHit() {
         if (gameOver) return;
         if (isInvulnActive()) {
@@ -456,18 +619,62 @@
           return;
         }
         gameOver = true;
+
+        // остановим существующие «кофе», чтобы не улетали после Game Over
+        coffees.getChildren().forEach(c => c.body && c.body.setVelocity(0, 0));
+        // и поставим на паузу спавн кофе
+        if (coffeeTimerEvent) coffeeTimerEvent.paused = true;
+
         const cam = game.scene.scenes[0].cameras.main;
         cam.flash(180, 255, 80, 80);
         playerBody.setVelocity(0, 0);
         const s = Math.floor(score);
         const best = Math.max(s, parseInt(localStorage.getItem('bestWhaleScore') || '0', 10));
         localStorage.setItem('bestWhaleScore', best.toString());
+
+        // отчёт на сервер
+        const name = (localStorage.getItem('whalePlayerName') || 'Игрок').trim() || 'Игрок';
+        apiReportScore(name, s, best);
+
         game.scene.scenes[0].add.text(cam.worldView.centerX, cam.worldView.centerY - 20,
           `Game Over\nСчёт: ${s}\nРекорд: ${best}`, {
           fontFamily: 'system-ui,Segoe UI,Roboto,Arial', fontSize: '28px', color: '#e0ffe0',
           align: 'center', backgroundColor: '#000000aa', padding: { x: 16, y: 12 }
         }).setOrigin(0.5).setDepth(10);
         game.scene.scenes[0].tweens.add({ targets: restartBtn, alpha: 1, duration: 250, delay: 120 });
+      }
+
+      // === МНОЖИТЕЛЬ ОЧКОВ от кофе ===
+      function scoreMultiplier() { return 1 + (coffeeCount * 0.10); }
+
+      function updateCoffeeHUD() {
+        if (coffeeText) coffeeText.setText(`+${coffeeCount * 10}%`);
+      }
+
+      function isInvulnActive() { return performance.now() < invulnUntil; }
+      function isClearPathActive() { return performance.now() < clearPathUntil; }
+
+      function halveAccumulatedSpeed() {
+        const dScroll = scrollSpeed - BASE_SCROLL;
+        const dTurn = turnSpeed - BASE_TURN;
+        scrollSpeed = BASE_SCROLL + dScroll * 0.5;
+        turnSpeed = BASE_TURN + dTurn * 0.5;
+      }
+
+      function setActiveBonusHUD(name, untilTs) {
+        activeBonusName = name;
+        activeBonusUntil = untilTs;
+        updateBonusHUD();
+      }
+      function updateBonusHUD() {
+        const now = performance.now();
+        if (now < activeBonusUntil) {
+          const secLeft = Math.max(0, Math.ceil((activeBonusUntil - now) / 1000));
+          bonusLabel.setText(`${activeBonusName}: ${secLeft} c`);
+          bonusLabel.setAlpha(1);
+        } else {
+          bonusLabel.setAlpha(0);
+        }
       }
 
       // === BUILTIN-ТЕКСТУРЫ ===
@@ -477,10 +684,6 @@
         g.fillStyle(0xdd3344, 1); g.fillRect(10, 28, 12, 14);
         g.fillStyle(0x333333, 1); g.fillRect(4, 42, 28, 3);
         g.generateTexture('placeholder', 36, 50); g.destroy();
-
-        if (USE_BUILTINS) {
-          // Можно добавить встроенные препятствия при желании
-        }
       }
 
       // === РЕГИСТРАЦИЯ ПРЕГРАД ===
@@ -551,16 +754,12 @@
         const y = GAME_H + 60;
 
         let o;
-        if (t.type === 'builtin') {
-          o = obstacles.create(x, y, t.key);
-          o.setDisplaySize(t.size.w, t.size.h);
-        } else {
-          o = scene.add.sprite(x, y, t.key, 0);
-          o.setOrigin(0.5).setDisplaySize(t.size.w, t.size.h);
-          scene.physics.world.enable(o); obstacles.add(o);
-          o.body.setImmovable(true).allowGravity = false;
-          if (t.animate) o.play(t.key + '_anim'); else o.setFrame(0);
-        }
+        o = scene.add.sprite(x, y, t.key, 0);
+        o.setOrigin(0.5).setDisplaySize(t.size.w, t.size.h);
+        scene.physics.world.enable(o); obstacles.add(o);
+        o.body.setImmovable(true).allowGravity = false;
+        if (t.animate) o.play(t.key + '_anim'); else o.setFrame(0);
+
         o.body && o.body.setSize(o.displayWidth * 0.8, o.displayHeight * 0.8);
         o.setDepth(1);
         scene.tweens.add({
@@ -574,12 +773,9 @@
       function spawnBonus(scene) {
         if (BONUS_POOL.length === 0) return;
 
-        // весовой выбор
         const totalW = BONUS_POOL.reduce((s, b) => s + b.weight, 0);
         let r = Math.random() * totalW, picked = BONUS_POOL[0];
-        for (const b of BONUS_POOL) { r -= b.weight; if (r <= 0) { picked = b; break; }
-
-        }
+        for (const b of BONUS_POOL) { r -= b.weight; if (r <= 0) { picked = b; break; } }
 
         const margin = 50;
         const x = Phaser.Math.Between(margin, GAME_W - margin);
@@ -612,12 +808,10 @@
         const x = Phaser.Math.Between(margin, GAME_W - margin);
         const y = GAME_H + 60;
 
-        // физический спрайт кофе
         const c = scene.physics.add.sprite(x, y, COFFEE_SPRITE.key, 0);
         c.setOrigin(0.5).setDisplaySize(COFFEE_SPRITE.size, COFFEE_SPRITE.size);
         c.body.setAllowGravity(false);
         c.body.setMaxVelocity(1400, 1400);
-        // базовое движение вверх — через физику
         c.body.setVelocity(0, -scrollSpeed);
 
         coffees.add(c);
@@ -627,70 +821,14 @@
         } else {
           c.setFrame(0);
         }
-
-        // никаких твинов — чтобы не конфликтовать с moveTo
       }
 
-      // === ПОДБОР БОНУСА ===
-      function onBonusPickup(player, b) {
-        if (!b || !b.type) return;
-        const now = performance.now();
-
-        if (b.type === 'invuln') {
-          invulnUntil = now + 8000;
-          setActiveBonusHUD(b.label || 'Неуязвимость', invulnUntil);
-        }
-        else if (b.type === 'halve_speed') {
-          halveAccumulatedSpeed();
-          activeBonusUntil = now + 8000;
-          activeBonusName = b.label || 'Полусброс скорости';
-        }
-        else if (b.type === 'clear_path') {
-          clearPathUntil = now + 8000;
-          obstacles.getChildren().forEach(o => o.destroy());
-          setActiveBonusHUD(b.label || 'Чистый путь', clearPathUntil);
-        }
-        else if (b.type === 'coffee_magnet') {
-          coffeeMagnetUntil = now + 8000; // 8 сек магнит
-          setActiveBonusHUD(b.label || 'Кофейный магнит', coffeeMagnetUntil);
-        }
-        else if (b.type === 'optimize_code') {
-          optimizeUntil = now + 8000; // 8 сек преграды меньше
-          setActiveBonusHUD(b.label || 'Оптимизация кода', optimizeUntil);
-        }
-        else if (b.type === 'scrum_boost') {
-          scrollSpeed *= 1.5;
-          turnSpeed *= 1.5;
-          coffeeCount += 10;
-          updateCoffeeHUD();
-          activeBonusUntil = now + 8000; // 8 сек эффект
-          activeBonusName = b.label || 'Scrum-ускорение';
-        }
-
-        b.destroy();
-      }
-
-      // === ПОДБОР КОФЕ ===
-      function onCoffeePickup(player, c) {
-        if (!c) return;
-        coffeeCount += 1;
-        updateCoffeeHUD();
-
-        // мини-эффект
-        const scene = game.scene.scenes[0];
-        scene.tweens.add({ targets: coffeeText, scaleX: 1.08, scaleY: 1.08, yoyo: true, duration: 120, ease: 'Sine.out' });
-
-        c.destroy();
-      }
-
-      // === МНОЖИТЕЛЬ ОЧКОВ от кофе ===
-      function scoreMultiplier() {
-        return 1 + (coffeeCount * 0.10);
-      }
+      // === ВСПОМОГАТЕЛЬНОЕ ===
+      function scoreMultiplier() { return 1 + (coffeeCount * 0.10); }
 
       function updateCoffeeHUD() {
         if (coffeeText) {
-          const percent = coffeeCount * 10; // без лимита
+          const percent = coffeeCount * 10;
           coffeeText.setText(`+${percent}%`);
         }
       }
@@ -705,7 +843,6 @@
         turnSpeed = BASE_TURN + dTurn * 0.5;
       }
 
-      // === HUD бонусов ===
       function setActiveBonusHUD(name, untilTs) {
         activeBonusName = name;
         activeBonusUntil = untilTs;
