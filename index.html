@@ -211,7 +211,7 @@
     // ===== простые запросы на бэк =====
     async function apiRegisterName(name) {
       try {
-        const r = await fetch('https://109.73.205.64:8090/whale/register', {
+        const r = await fetch('https://andrewtalanov.ru/whale/register', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ name }),
@@ -228,7 +228,7 @@
     }
     async function apiReportScore(name, score, best) {
       try {
-        await fetch('https://109.73.205.64:8090/whale/score', {
+        await fetch('https://andrewtalanov.ru/whale/score', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ name, score, best, event: 'game_over', ts: Date.now() }),
           keepalive: true
