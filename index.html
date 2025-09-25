@@ -133,6 +133,10 @@
     .center {
       text-align: center;
     }
+
+    #game.blocked {
+      pointer-events: none !important;
+    }
   </style>
 </head>
 
@@ -248,8 +252,8 @@
         const saved = (localStorage.getItem('whalePlayerName') || '').trim();
         overlay.removeAttribute('hidden');
 
-        // КРИТИЧЕСКОЕ: блокируем игру, чтобы тачи не уходили в Phaser
-        if (gameLayer) gameLayer.style.pointerEvents = 'none';
+        // Жёстко блокируем все клики для Phaser-слоя, чтобы тапы уходили в модалку
+        gameLayer?.classList.add('blocked');
 
         if (saved) {
           nameRow.style.display = 'none';
@@ -265,7 +269,7 @@
       function hideOverlay() {
         overlay.setAttribute('hidden', '');
         // Возвращаем управление игре
-        if (gameLayer) gameLayer.style.pointerEvents = 'auto';
+        gameLayer?.classList.remove('blocked');
       }
 
       async function startFromName(name) {
