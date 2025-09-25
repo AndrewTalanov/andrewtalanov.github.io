@@ -4,39 +4,47 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>КИТ — Статистика</title>
-  <meta name="theme-color" content="#0b1f2c" />
+  <meta name="theme-color" content="#ffffff" />
   <style>
-    :root{--bg:#071720;--card:#0b1f2c;--card2:#0e2736;--text:#e7f7ff;--muted:#9ed6f7;--accent:#14a3d9;--sep:#123548}
+    :root{
+      --bg:#f5f7fa;
+      --card:#ffffff;
+      --card2:#fdfdfd;
+      --text:#1a1a1a;
+      --muted:#555;
+      --accent:#1283c7;
+      --sep:#e0e6eb;
+    }
     *{box-sizing:border-box} html,body{height:100%}
-    body{margin:0;background:radial-gradient(1000px 700px at 50% 0,#0a2231,#071720 60%);font-family:system-ui,Segoe UI,Roboto,Arial,sans-serif;color:var(--text);display:flex;flex-direction:column;align-items:center;padding:24px 14px}
+    body{margin:0;background:var(--bg);font-family:system-ui,Segoe UI,Roboto,Arial,sans-serif;color:var(--text);display:flex;flex-direction:column;align-items:center;padding:24px 14px}
     .container{width:min(980px,100%)}
-    h1{margin:0 0 16px;font-size:28px;line-height:1.2;color:#b7ebff;text-shadow:0 2px 16px rgba(0,0,0,.35)}
+    h1{margin:0 0 16px;font-size:28px;line-height:1.2;color:#0d2c40}
     .subtitle{margin:0 0 18px;color:var(--muted);opacity:.9}
-    .card{background:linear-gradient(180deg,var(--card),var(--card2));border:1px solid var(--sep);border-radius:16px;box-shadow:0 12px 36px rgba(0,0,0,.35);padding:12px;overflow:hidden}
+    .card{background:var(--card);border:1px solid var(--sep);border-radius:16px;box-shadow:0 4px 14px rgba(0,0,0,.08);padding:12px;overflow:hidden}
     .toolbar{display:flex;align-items:center;gap:8px;padding:6px 6px 12px 6px}
-    .pill{background:#0e2c3d;color:#bbf0ff;border:1px solid #12455e;padding:6px 10px;border-radius:999px;font-size:13px}
+    .pill{background:#e8f6ff;color:#034c6f;border:1px solid #b9e2f7;padding:6px 10px;border-radius:999px;font-size:13px}
     .table-wrap{overflow:auto;border-radius:12px;border:1px solid var(--sep)}
     table{width:100%;border-collapse:collapse;min-width:560px;background:transparent}
-    thead th{position:sticky;top:0;background:#0f2b3b;font-weight:600;font-size:13px;letter-spacing:.02em;text-align:left;color:#bfeeff;padding:10px 12px;border-bottom:1px solid var(--sep)}
-    tbody td{padding:10px 12px;border-bottom:1px solid #0f3143;font-size:15px}
-    tbody tr:nth-child(odd){background:rgba(255,255,255,0.02)}
-    tbody tr:hover{background:rgba(20,163,217,0.08)}
+    thead th{position:sticky;top:0;background:#f0f5f9;font-weight:600;font-size:13px;text-align:left;color:#0d2c40;padding:10px 12px;border-bottom:1px solid var(--sep)}
+    tbody td{padding:10px 12px;border-bottom:1px solid var(--sep);font-size:15px}
+    tbody tr:nth-child(odd){background:#fafcfd}
+    tbody tr:hover{background:#e8f6ff}
     .rank{width:84px;font-variant-numeric:tabular-nums}
     .medal{font-size:18px;margin-right:6px}
     .name{font-weight:600}
     .right{text-align:right}
-    .dt{color:#b1e6ff;font-size:13px;white-space:nowrap}
+    .dt{color:#666;font-size:13px;white-space:nowrap}
     .state{padding:20px 14px;text-align:center;color:var(--muted)}
-    .state .spinner{width:28px;height:28px;border-radius:50%;border:3px solid #166283;border-top-color:#54d0ff;display:inline-block;animation:spin 1s linear infinite;margin-bottom:10px}
+    .state .spinner{width:28px;height:28px;border-radius:50%;border:3px solid #ccc;border-top-color:var(--accent);display:inline-block;animation:spin 1s linear infinite;margin-bottom:10px}
     @keyframes spin{to{transform:rotate(360deg)}}
-    .footer-note{margin-top:12px;text-align:center;color:#88cfe9;font-size:12px;opacity:.9}
+    .footer-note{margin-top:12px;text-align:center;color:#666;font-size:12px}
     @media (max-width:640px){h1{font-size:22px}.subtitle{font-size:14px}tbody td,thead th{padding:9px 10px}.rank{width:74px}}
   </style>
 </head>
 <body>
   <div class="container">
     <h1>КИТ — Таблица лидеров</h1>
-    <p class="subtitle">ТОП-100 по лучшему счёту. Обновляется при загрузке страницы.</p>
+    <p class="subtitle">ТОП-100 по лучшему счёту.</p>
 
     <div class="card">
       <div class="toolbar">
@@ -63,102 +71,64 @@
         </table>
       </div>
     </div>
-
-    <div class="footer-note">Источник: <code>GET /whale/leaderboard?limit=100</code></div>
   </div>
 
   <script>
-    // ——— Anti-ServiceWorker: снимаем SW и 1 раз перезагружаем страницу —
+    // — SW выключаем на этой странице
     (async function detachSWOnce(){
       try{
         if(!('serviceWorker' in navigator)) return;
         const FLAG = 'sw_cleared_for_stats';
-        if(sessionStorage.getItem(FLAG)) return; // уже очищено
+        if(sessionStorage.getItem(FLAG)) return;
         const regs = await navigator.serviceWorker.getRegistrations();
         if(regs.length){
           for(const r of regs){ try{ await r.unregister(); }catch{} }
-          // если страница ещё под контролем SW — перезагрузим 1 раз
           if(navigator.serviceWorker.controller){
-            sessionStorage.setItem(FLAG, '1');
-            location.reload();
+            sessionStorage.setItem(FLAG,'1'); location.reload();
           }
         }
       }catch{}
     })();
 
-    // === Настройки API
-    const API_BASE = 'https://andrewtalanov.ru';
-    const LIMIT = 100;
+    const API_BASE='https://andrewtalanov.ru', LIMIT=100;
+    const ord=(n)=>n===1?'🥇 1-е':n===2?'🥈 2-е':n===3?'🥉 3-е':`${n}-е`;
+    const esc=(s='')=>s.replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
+    const fmtDate=(iso)=>{if(!iso)return '—';const d=new Date(iso);if(isNaN(d))return '—';return d.toLocaleString('ru-RU',{dateStyle:'short',timeStyle:'short'})};
 
-    // Утилиты
-    const ord = (n)=> (n===1?'🥇 1-е':n===2?'🥈 2-е':n===3?'🥉 3-е':`${n}-е`);
-    const esc = (s='')=> s.replace(/[&<>"']/g, m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
-    const fmtDate = (iso)=>{
-      if(!iso) return '—';
-      const d = new Date(iso); if(isNaN(d)) return '—';
-      const dd=String(d.getDate()).padStart(2,'0');
-      const mm=String(d.getMonth()+1).padStart(2,'0');
-      const yy=d.getFullYear();
-      const hh=String(d.getHours()).padStart(2,'0');
-      const mi=String(d.getMinutes()).padStart(2,'0');
-      return `${dd}.${mm}.${yy} ${hh}:${mi}`;
-    };
-
-    async function fetchLeaderboard(limit=LIMIT){
-      const url = `${API_BASE}/whale/leaderboard?limit=${encodeURIComponent(limit)}&_=${Date.now()}`;
-      const r = await fetch(url, {
-        method:'GET',
-        mode:'cors',
-        cache:'no-store',
-        credentials:'omit',
-        headers:{ 'Accept':'application/json' }
-      });
-      if(!r.ok) throw new Error(`HTTP ${r.status}`);
-      return r.json();
+    async function fetchLeaderboard(){
+      const r=await fetch(`${API_BASE}/whale/leaderboard?limit=${LIMIT}&_=${Date.now()}`,{cache:'no-store',mode:'cors'});
+      if(!r.ok) throw new Error(`HTTP ${r.status}`); return r.json();
     }
-
     function renderTable(players){
-      const tbody = document.getElementById('tbody');
-      tbody.innerHTML = '';
+      const tbody=document.getElementById('tbody'); tbody.innerHTML='';
       players.forEach((p,i)=>{
-        const rank = p.rank ?? (i+1);
-        const medal = rank===1?'🥇':rank===2?'🥈':rank===3?'🥉':'';
-        const tr = document.createElement('tr');
-        tr.innerHTML = `
-          <td class="rank">${medal?`<span class="medal">${medal}</span>`:''}<span>${ord(rank)} место</span></td>
-          <td class="name">${esc(p.name || 'Игрок')}</td>
-          <td class="right">${Number.isFinite(p.best_score)? esc(String(p.best_score)) : '—'}</td>
-          <td class="dt">${fmtDate(p.created_at)}</td>
-        `;
+        const rank=p.rank??(i+1);
+        const medal=rank===1?'🥇':rank===2?'🥈':rank===3?'🥉':'';
+        const tr=document.createElement('tr');
+        tr.innerHTML=`
+          <td class="rank">${medal?`<span class="medal">${medal}</span>`:''}${ord(rank)} место</td>
+          <td class="name">${esc(p.name||'Игрок')}</td>
+          <td class="right">${Number.isFinite(p.best_score)?esc(String(p.best_score)):'—'}</td>
+          <td class="dt">${fmtDate(p.created_at)}</td>`;
         tbody.appendChild(tr);
       });
     }
-
     async function boot(){
-      const state = document.getElementById('state');
-      const tableWrap = document.getElementById('tableWrap');
-      const countPill = document.getElementById('countPill');
-      const updatedPill = document.getElementById('updatedPill');
-
+      const state=document.getElementById('state'),tableWrap=document.getElementById('tableWrap');
+      const countPill=document.getElementById('countPill'),updatedPill=document.getElementById('updatedPill');
       try{
-        const data = await fetchLeaderboard(LIMIT);
-        const players = Array.isArray(data.players)? data.players : [];
+        const data=await fetchLeaderboard(); const players=Array.isArray(data.players)?data.players:[];
         renderTable(players);
-        countPill.textContent = `Участников: ${data.count ?? players.length}`;
-        updatedPill.textContent = `Обновлено: ${fmtDate(new Date().toISOString())}`;
-        state.style.display = 'none';
-        tableWrap.style.display = 'block';
+        countPill.textContent=`Участников: ${data.count??players.length}`;
+        updatedPill.textContent=`Обновлено: ${fmtDate(new Date().toISOString())}`;
+        state.style.display='none'; tableWrap.style.display='block';
       }catch(err){
-        console.error('Leaderboard load failed', err);
-        state.innerHTML = `
-          <div style="font-size:18px; margin-bottom:8px;">Не удалось загрузить рейтинг</div>
-          <div style="opacity:.85; margin-bottom:12px;">Проверьте соединение или попробуйте ещё раз.</div>
-          <button id="retry" style="background:#1283c7;border:1px solid #2a6fa0;color:#fff;font-weight:600;border-radius:10px;padding:8px 12px;cursor:pointer">Обновить</button>
-        `;
-        document.getElementById('retry')?.addEventListener('click', ()=> location.reload());
+        state.innerHTML=`<div style="font-size:18px;margin-bottom:8px;">Не удалось загрузить рейтинг</div>
+          <div style="opacity:.85;margin-bottom:12px;">Проверьте соединение или попробуйте ещё раз.</div>
+          <button id="retry" style="background:var(--accent);border:0;color:#fff;font-weight:600;border-radius:10px;padding:8px 12px;cursor:pointer">Обновить</button>`;
+        document.getElementById('retry')?.addEventListener('click',()=>location.reload());
       }
     }
-
     boot();
   </script>
 </body>
